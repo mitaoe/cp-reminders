@@ -19,6 +19,7 @@ import (
 	"strings"
 	"syscall"
 
+	signallog "go.mau.fi/libsignal/logger"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"cp-reminders/sender/internal/redact"
@@ -126,8 +127,12 @@ func (f *flags) parse(args []string) error {
 	return nil
 }
 
+// logger returns the redacting whatsmeow logger at the chosen level and routes
+// libsignal's process-wide logger through it as sub-logger "Signal".
 func (f *flags) logger() waLog.Logger {
-	return redact.Logger(waLog.Stdout("wa", strings.ToUpper(*f.logLevel), false))
+	base := waLog.Stdout("wa", strings.ToUpper(*f.logLevel), false)
+	signallog.Logger = redact.Signal(base.Sub("Signal"))
+	return redact.Logger(base)
 }
 
 func requireEnv(getenv func(string) string, names ...string) ([]string, error) {

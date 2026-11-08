@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	signallog "go.mau.fi/libsignal/logger"
 	"go.mau.fi/whatsmeow/types"
 
 	"cp-reminders/sender/internal/drain"
@@ -262,13 +263,26 @@ func TestLoggerRedactsWhatsAppIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.logger().Sub("Client").Warnf("retry receipt from %s", "919876543210@s.whatsapp.net")
+	signallog.Warning("no session found for user 123456789012345_1:5")
+	signallog.Info("below the log level")
 	w.Close()
 	out, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "[wa/Client WARN] retry receipt from <id>@s.whatsapp.net") || strings.Contains(string(out), "919876543210") {
-		t.Errorf("logger output not redacted: %q", out)
+	for _, want := range []string{
+		"[wa/Client WARN] retry receipt from <id>@s.whatsapp.net",
+		"[wa/Signal WARN] main_test.go:",
+		": no session found for user <number>:5",
+	} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("output %q does not contain %q", out, want)
+		}
+	}
+	for _, leak := range []string{"919876543210", "123456789012345", "below the log level"} {
+		if strings.Contains(string(out), leak) {
+			t.Errorf("output %q contains %q", out, leak)
+		}
 	}
 }
 

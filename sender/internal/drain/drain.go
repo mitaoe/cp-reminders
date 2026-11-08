@@ -157,7 +157,8 @@ func (d *Drainer) deliver(ctx context.Context, items []outbox.Item, results []ou
 	for n, i := range pending {
 		it := items[i]
 		if d.DryRun {
-			d.logf("dry run: would send %s:\n%s\n", it.Key, it.Text)
+			d.logf("dry run: would send %s:", it.Key)
+			d.printText(it.Text)
 			continue
 		}
 		id, err := sess.SendText(ctx, d.Target, it.Text)
@@ -220,9 +221,17 @@ func (d *Drainer) report(s summary) {
 	}
 }
 
+// logf writes a log line with WhatsApp IDs and phone numbers redacted.
 func (d *Drainer) logf(format string, args ...any) {
 	if d.Out != nil {
 		fmt.Fprintln(d.Out, redact.String(fmt.Sprintf(format, args...)))
+	}
+}
+
+// printText writes a reminder text unchanged, followed by a blank line.
+func (d *Drainer) printText(text string) {
+	if d.Out != nil {
+		fmt.Fprintf(d.Out, "%s\n\n", text)
 	}
 }
 

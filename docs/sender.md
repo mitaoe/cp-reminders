@@ -57,11 +57,28 @@ Message text appears only in `--dry-run` output and in the failure summary, neve
 
 ### Public output
 
-Workflow logs and job summaries of the deployment repository are public, so `drain` keeps WhatsApp identities out of them:
+Workflow logs and job summaries of the deployment repository are public, so `drain` keeps WhatsApp identities out of them.
 
-- Everything it prints passes through `internal/redact`: whatsmeow's log lines (its logger is wrapped), the sender's own log lines, the error text in the job summary and the final `wa: …` error line. Every WhatsApp ID becomes `<id>@` followed by its server (`<id>@s.whatsapp.net`, `<id>@g.us`, `<id>@lid`), and every standalone run of ten or more digits becomes `<number>`.
-- The target group is reported only as verified or refused, never by name.
-- Reminder texts in the failure summary are printed unchanged, so they can be posted by hand.
+`internal/redact` rewrites:
+
+- every WhatsApp ID as `types.JID` writes it, to `<id>@` and its server (`<id>@s.whatsapp.net`, `<id>@g.us`, `<id>@lid`);
+- every standalone run of ten or more digits, including the agent suffix of a Signal address (`123456789012345_1:5` becomes `<number>:5`), to `<number>`. Digits that follow a dot, such as the last part of the WhatsApp client version, are kept.
+
+It is applied to:
+
+| Output | How |
+|---|---|
+| whatsmeow's log lines | Its logger is wrapped, at every level and in every sub-logger. |
+| libsignal's log lines | libsignal's process-wide logger is set to the same wrapped logger, as sub-logger `Signal`, so it also follows `--log-level`. |
+| The sender's own log lines | Every line it prints. |
+| The job summary | The run error, each reminder's failure reason and the acknowledgement error. |
+| The final `wa: …` line | The error that ends the run. |
+
+The target group is reported only as verified or refused, never by name.
+
+Left unchanged: reminder texts, in the failure summary and in `--dry-run` output, so they can be posted as they are; reminder keys, claim IDs and message IDs, which identify no person.
+
+Not covered: phone numbers written with spaces or dashes, which neither whatsmeow nor libsignal writes, and the message of a Go runtime panic, which the runtime prints itself.
 
 `wa groups` and `wa pair` print IDs and phone numbers on purpose; they are run locally, never in a workflow.
 
@@ -117,7 +134,7 @@ Use the candidate whose `community` is the right community and whose line shows 
 | `cmd/wa` | Flags, environment, wiring, the groups table and the pairing prompts. |
 | `internal/drain` | Claim, validate, deliver and acknowledge, and the failure summary. Depends only on the `Outbox`, `Session` and `Ledger` interfaces, so it is tested with fakes. |
 | `internal/outbox` | HTTP client for `/outbox/claim` and `/outbox/ack` with per-request timeouts and acknowledgement retries. |
-| `internal/redact` | Removes WhatsApp IDs and phone numbers from text and from whatsmeow's log lines. |
+| `internal/redact` | Redacts WhatsApp IDs and long numbers from text, and wraps whatsmeow's and libsignal's loggers to do the same. |
 | `internal/state` | The age vault, the encrypted session store and the `sent.json` ledger. |
 | `internal/wa` | whatsmeow wrapper: fatal-event watcher, connect and wait, plain text sending, QR and phone pairing, admin check. |
 

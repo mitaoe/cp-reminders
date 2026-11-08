@@ -6,19 +6,27 @@ import (
 	"fmt"
 	"regexp"
 
+	signallog "go.mau.fi/libsignal/logger"
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
 var (
-	jid    = regexp.MustCompile(`\b[0-9][0-9.:\-]*@(hosted\.lid|s\.whatsapp\.net|c\.us|g\.us|lid|hosted|newsletter|broadcast|msgr|interop|bot)\b`)
-	number = regexp.MustCompile(`\b[0-9]{10,}\b`)
+	// jid matches a WhatsApp ID as types.JID.String writes it: a numeric user,
+	// optionally with an agent and a device, and a known server.
+	jid = regexp.MustCompile(`\b[0-9][0-9.:\-]*@(hosted\.lid|s\.whatsapp\.net|c\.us|g\.us|lid|hosted|newsletter|broadcast|msgr|interop|bot)\b`)
+
+	// number matches a standalone run of ten or more digits, including the
+	// agent suffix of a Signal address (`_1` for LIDs, `_128` and `_129` for
+	// hosted IDs). A run that follows a dot, such as the last part of a
+	// version number, is not standalone.
+	number = regexp.MustCompile(`(^|[^0-9A-Za-z_.])[0-9]{10,}(?:_[0-9]{1,3})?\b`)
 )
 
 // String replaces the user part of every WhatsApp ID with <id>, keeping its
 // server, and every standalone run of ten or more digits with <number>.
 func String(s string) string {
 	s = jid.ReplaceAllString(s, "<id>@$1")
-	return number.ReplaceAllString(s, "<number>")
+	return number.ReplaceAllString(s, "${1}<number>")
 }
 
 // Logger returns a whatsmeow logger that redacts each message with String
@@ -50,3 +58,19 @@ func (l logger) Debugf(msg string, args ...any) {
 func (l logger) Sub(module string) waLog.Logger {
 	return logger{next: l.next.Sub(module)}
 }
+
+// Signal returns a logger for libsignal that redacts each message with String
+// and passes it, prefixed with its caller, to next at the same level.
+func Signal(next waLog.Logger) signallog.Loggable {
+	return signal{next: Logger(next)}
+}
+
+type signal struct {
+	next waLog.Logger
+}
+
+func (s signal) Error(caller, msg string)   { s.next.Errorf("%s: %s", caller, msg) }
+func (s signal) Warning(caller, msg string) { s.next.Warnf("%s: %s", caller, msg) }
+func (s signal) Info(caller, msg string)    { s.next.Infof("%s: %s", caller, msg) }
+func (s signal) Debug(caller, msg string)   { s.next.Debugf("%s: %s", caller, msg) }
+func (s signal) Configure(string)           {}
