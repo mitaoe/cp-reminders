@@ -100,6 +100,8 @@ Not covered: phone numbers written with spaces or dashes, which neither whatsmeo
 
 `wa groups` and `wa pair` print IDs and phone numbers on purpose; they are run locally, never in a workflow.
 
+The job summary is rendered as Markdown on the public run page, and the keys, times, message IDs and error texts in it come from the Worker or from libraries. Each is written on a single line as an inline code span whose backtick delimiter is longer than any run of backticks in the value, padded with a space when the value starts or ends with a backtick ([CommonMark code spans](https://spec.commonmark.org/0.31.2/#code-spans)), so it shows literally and cannot add headings, links or formatting. Reminder texts are in fenced blocks whose fence is longer than any run of backticks in the text.
+
 ## Pairing
 
 The paired number must be an admin of the community so that it can post in Announcements, and its phone must open WhatsApp at least every 14 days: linked devices are logged out after 14 days without the phone being used ([WhatsApp FAQ](https://faq.whatsapp.com/378279804439436/)).
