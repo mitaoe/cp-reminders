@@ -3,7 +3,7 @@ import { selectContests } from "./core/select.ts";
 import { rules, tipRules } from "./config.ts";
 import { ensureSnapshot } from "./contests.ts";
 import type { Fetcher } from "./env.ts";
-import { NO_CONTEST_LINK } from "./tick.ts";
+import { NO_CONTEST_LINK } from "./errors.ts";
 import { loadOverrides } from "./tips.ts";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

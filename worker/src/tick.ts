@@ -3,12 +3,11 @@ import { dueReminders, reminderKey } from "./core/select.ts";
 import { rules, tipRules } from "./config.ts";
 import { ensureSnapshot } from "./contests.ts";
 import type { Fetcher } from "./env.ts";
+import { NO_CONTEST_LINK } from "./errors.ts";
 import { setMeta } from "./meta.ts";
 import { sweepStatements } from "./reminders.ts";
 import { loadOverrides } from "./tips.ts";
 import { maybeWake } from "./wake.ts";
-
-export const NO_CONTEST_LINK = "no_contest_link";
 
 export interface TickResult {
   fetched: boolean;
