@@ -1,4 +1,4 @@
-name: deploy
+name: Deploy Worker
 
 on:
   push:
@@ -20,6 +20,7 @@ permissions:
 
 jobs:
   check:
+    name: Type Check and Tests
     if: vars.BOT_DEPLOYMENT == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -38,6 +39,7 @@ jobs:
       - run: pnpm test
 
   deploy:
+    name: Deploy to Cloudflare
     needs: check
     if: vars.BOT_DEPLOYMENT == 'true'
     runs-on: ubuntu-latest

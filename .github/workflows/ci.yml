@@ -1,4 +1,4 @@
-name: ci
+name: CI
 
 on:
   push:
@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   worker:
+    name: Worker Type Check and Tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -27,6 +28,7 @@ jobs:
       - run: pnpm --filter cp-reminders-worker test
 
   sender:
+    name: Sender Vet and Tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
