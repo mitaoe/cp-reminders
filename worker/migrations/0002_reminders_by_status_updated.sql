@@ -9,5 +9,3 @@ SELECT 'reminder_counts', json_object(
 )
 WHERE true
 ON CONFLICT(k) DO UPDATE SET v = excluded.v;
-
-PRAGMA optimize;

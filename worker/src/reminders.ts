@@ -12,7 +12,7 @@ export const MAX_ATTEMPTS = 3;
 export const MAX_CLAIM = 5;
 
 const ELIGIBLE =
-  "deadline_utc >= ?1 AND attempts < ?3 AND (status = 'queued' OR (status = 'claimed' AND claimed_at <= ?2))";
+  "status IN ('queued', 'claimed') AND deadline_utc >= ?1 AND attempts < ?3 AND (status = 'queued' OR claimed_at <= ?2)";
 
 export function sweepStatements(db: D1Database, nowMs: number): D1PreparedStatement[] {
   const now = isoUtc(nowMs);
@@ -30,7 +30,7 @@ export function sweepStatements(db: D1Database, nowMs: number): D1PreparedStatem
     db
       .prepare(
         "UPDATE reminders SET status = 'failed', last_error = 'lease expired after max attempts', updated_at = ?1 " +
-          "WHERE status = 'claimed' AND claimed_at <= ?2 AND attempts >= ?3",
+          "WHERE status = 'claimed' AND claimed_at <= ?2 AND deadline_utc >= ?1 AND attempts >= ?3",
       )
       .bind(now, leaseCut, MAX_ATTEMPTS),
   ];
@@ -79,7 +79,8 @@ const MAX_MESSAGE_ID_LENGTH = 200;
 
 const errorText = (r: AckResult): string => (r.error ?? "unknown error").slice(0, MAX_ERROR_LENGTH);
 
-export function ackStatement(db: D1Database, claimId: string, r: AckResult, now: string, maxAttempts: number): D1PreparedStatement {
+export function ackStatement(db: D1Database, claimId: string, r: AckResult, nowMs: number): D1PreparedStatement {
+  const now = isoUtc(nowMs);
   switch (r.status) {
     case "sent":
       return db
@@ -98,7 +99,7 @@ export function ackStatement(db: D1Database, claimId: string, r: AckResult, now:
             "last_error = ?3, updated_at = ?4 " +
             "WHERE key = ?1 AND claim_id = ?2 AND status = 'claimed'",
         )
-        .bind(r.key, claimId, errorText(r), now, maxAttempts);
+        .bind(r.key, claimId, errorText(r), now, MAX_ATTEMPTS);
     case "rejected":
       return db
         .prepare(
@@ -111,8 +112,7 @@ export function ackStatement(db: D1Database, claimId: string, r: AckResult, now:
 
 export async function ackReminders(env: Env, claimId: string, results: AckResult[], nowMs: number): Promise<number> {
   if (results.length === 0) return 0;
-  const now = isoUtc(nowMs);
-  const outcomes = await env.DB.batch(results.map((r) => ackStatement(env.DB, claimId, r, now, MAX_ATTEMPTS)));
+  const outcomes = await env.DB.batch(results.map((r) => ackStatement(env.DB, claimId, r, nowMs)));
   return outcomes.reduce((sum, o) => sum + o.meta.changes, 0);
 }
 
