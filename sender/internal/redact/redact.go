@@ -11,14 +11,7 @@ import (
 )
 
 var (
-	// jid matches a WhatsApp ID as types.JID.String writes it: a numeric user,
-	// optionally with an agent and a device, and a known server.
-	jid = regexp.MustCompile(`\b[0-9][0-9.:\-]*@(hosted\.lid|s\.whatsapp\.net|c\.us|g\.us|lid|hosted|newsletter|broadcast|msgr|interop|bot)\b`)
-
-	// number matches a standalone run of ten or more digits, including the
-	// agent suffix of a Signal address (`_1` for LIDs, `_128` and `_129` for
-	// hosted IDs). A run that follows a dot, such as the last part of a
-	// version number, is not standalone.
+	jid    = regexp.MustCompile(`\b[0-9][0-9.:\-]*@(hosted\.lid|s\.whatsapp\.net|c\.us|g\.us|lid|hosted|newsletter|broadcast|msgr|interop|bot)\b`)
 	number = regexp.MustCompile(`(^|[^0-9A-Za-z_.])[0-9]{10,}(?:_[0-9]{1,3})?\b`)
 )
 

@@ -127,8 +127,6 @@ func (f *flags) parse(args []string) error {
 	return nil
 }
 
-// logger returns the redacting whatsmeow logger at the chosen level and routes
-// libsignal's process-wide logger through it as sub-logger "Signal".
 func (f *flags) logger() waLog.Logger {
 	base := waLog.Stdout("wa", strings.ToUpper(*f.logLevel), false)
 	signallog.Logger = redact.Signal(base.Sub("Signal"))

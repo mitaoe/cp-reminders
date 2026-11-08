@@ -221,14 +221,12 @@ func (d *Drainer) report(s summary) {
 	}
 }
 
-// logf writes a log line with WhatsApp IDs and phone numbers redacted.
 func (d *Drainer) logf(format string, args ...any) {
 	if d.Out != nil {
 		fmt.Fprintln(d.Out, redact.String(fmt.Sprintf(format, args...)))
 	}
 }
 
-// printText writes a reminder text unchanged, followed by a blank line.
 func (d *Drainer) printText(text string) {
 	if d.Out != nil {
 		fmt.Fprintf(d.Out, "%s\n\n", text)
