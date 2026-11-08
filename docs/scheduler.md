@@ -10,8 +10,8 @@ The Worker in `worker/` fetches contests, queues reminders in D1, wakes the send
 | `src/router.ts` | Path and method matching; bearer authentication per route. |
 | `src/auth.ts` | Bearer parsing and constant-time comparison of SHA-256 digests. |
 | `src/core/` | Contest selection, message formatting ([formatter.md](formatter.md)) and the free-text rules of the reminder format ([reminder-format.md](reminder-format.md)). |
-| `src/contests.ts` | Contest snapshot: clist, with the Codeforces API as fallback, and the count of upcoming contests without a contest link. |
-| `src/tick.ts` | One tick: refresh the snapshot, queue due reminders or record them as `no_contest_link` failures, expire, wake. |
+| `src/contests.ts` | Contest snapshot of the contests that start from 24 hours ago onward: clist, with the Codeforces API as fallback, and the count of upcoming contests without a contest link. |
+| `src/tick.ts` | One tick: refresh the snapshot, queue due reminders or record them as `no_contest_link` failures, record windows that lay entirely between the previous successful tick and this one as `missed_window`, expire, store the counts, wake. |
 | `src/reminders.ts` | Claim, acknowledgement, lease and expiry SQL. |
 | `src/wake.ts` | `workflow_dispatch` of `send.yml`, debounced. |
 | `src/outbox.ts`, `src/admin.ts` | Request validation and handlers for the outbox and admin routes. |
@@ -61,6 +61,7 @@ The Worker also logs, with `console.error`:
 |---|---|
 | `<n> upcoming contest(s) without a contest link` | A snapshot refresh finds selected contests whose link has no contest-page shape ([formatter.md](formatter.md#contest-links)); `/health` shows the count as `unlinkedContests`. |
 | `no contest link: <key>` | The tick records such a contest's reminder as `failed`; `POST /tick` also returns the line in `errors`. |
+| `missed reminder window: <key>` | The tick records a contest whose reminder window lay entirely between the previous successful tick and this one as `expired` with `missed_window`; `POST /tick` also returns the line in `errors`. |
 | `contest name replaced by the fallback name: <key>` | The tick queues a reminder whose name could not be made valid free text. |
 | `ignoring the stored tip for <href>: not a valid tip` | Tips are loaded and a one-off tip in D1 is not valid free text. |
 
@@ -70,7 +71,7 @@ The Worker also logs, with `console.error`:
 |---|---|---|
 | `batch()` runs its statements in order as one transaction and returns one result per statement ([D1 Worker API](https://developers.cloudflare.com/d1/worker-api/d1-database/)) | Snapshot save, sweep and claim, tick, ack | Overlapping-claim and overlapping-tick tests |
 | `meta.changes` per statement | The `queued` and `applied` counts | Tick and ack tests |
-| `UPDATE … RETURNING` and `INSERT … ON CONFLICT DO NOTHING` | Claim, queueing, upserts | `test/claim.test.ts` and `test/tick.test.ts` against the local D1 engine |
+| `UPDATE … RETURNING` and `INSERT … ON CONFLICT DO NOTHING` | Claim, queueing, recording missed windows once, upserts | `test/claim.test.ts` and `test/tick.test.ts` against the local D1 engine |
 
 ## Deployment
 

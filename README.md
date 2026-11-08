@@ -19,7 +19,7 @@ Posts a reminder for every Codeforces, CodeChef, LeetCode and AtCoder contest in
 
 ## How it works
 
-- A **Cloudflare Worker** reads upcoming contests from [clist.by](https://clist.by) every hour, queues each reminder in D1 when it becomes due, and wakes the sender.
+- A **Cloudflare Worker** reads the contests of the last 24 hours and the upcoming ones from [clist.by](https://clist.by) every hour, queues each reminder in D1 when it becomes due, records a reminder whose window passed between two ticks as missed, and wakes the sender.
 - A **GitHub Actions** job runs the **Go sender**, a WhatsApp linked device on a dedicated number, which posts the queued reminders to the Announcements group and nowhere else. It posts only texts in the agreed reminder format, at most 8 in any 24 hours.
 - Everything runs on free tiers. The badges above show the checks and the bot's live health: red after 15 minutes without a tick, when the sender cannot be started, or after a missed reminder; yellow when an upcoming contest has a link the bot cannot turn into its contest page, or when clist is failing and the Codeforces fallback is in use.
 
