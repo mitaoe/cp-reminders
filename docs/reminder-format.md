@@ -57,7 +57,9 @@ Lengths are counted in Unicode code points, which are Go's runes and the element
 | Atcoder | `https://atcoder.jp/contests/<id>`, where the id is ASCII letters, digits, `_` and `-`. |
 | LeetCode | `https://leetcode.com/contest/<slug>/`, where the slug is lowercase ASCII letters, digits and `-`, and the link ends with `/`. |
 
-Each shape is the contest's own page and nothing else: no other host or subdomain, no other page of the platform such as a blog entry or a ranking, no query or fragment. AtCoder ids include capitals, as in `https://atcoder.jp/contests/KeioPC2025`, so the AtCoder shape allows them.
+Every shape is `https://` and the platform's host exactly as written, with no other host or subdomain, user name, port, query or fragment. The Codeforces, AtCoder and LeetCode shapes name a contest page and no other page of the platform, such as a blog entry, a problem or a ranking. The CodeChef shape is a single path segment on `www.codechef.com`, which is how CodeChef addresses contests, and which also matches some pages of CodeChef that are not contests, such as `https://www.codechef.com/practice`. AtCoder ids include capitals, as in `https://atcoder.jp/contests/KeioPC2025`, so the AtCoder shape allows them.
+
+The sender accepts only these shapes. The formatter reads clist's links leniently and always writes these shapes ([formatter.md](formatter.md#contest-links)).
 
 ## Free text
 
@@ -75,17 +77,21 @@ Ordinary contest names stay safe: `Div.4`, `U.S. Open` and `3.14159` have no las
 
 Free text must also not be empty or only spaces.
 
+The phone rule is a floor of ten digits, not a closed definition of a phone number: a run of nine or fewer digits passes, and so do digits separated by characters outside the listed separators, such as letters. Ten digits is the length of an Indian mobile number without its country code; shorter runs are contest numbers, ids and years, which names need.
+
 ## Who enforces what
 
 | Component | Rule |
 |---|---|
-| Formatter | Renders the layout and the fields. Contest names are made valid free text by construction ([formatter.md](formatter.md#contest-names)); a name that cannot be made valid is replaced by `<Platform> contest`. A contest without a link of its platform's shape is not selected, so it gets no reminder. |
+| Formatter | Renders the layout and the fields. Contest names are made valid free text by construction ([formatter.md](formatter.md#contest-names)); a name that cannot be made valid is replaced by `<Platform> contest`, and the Worker logs it. A selected contest whose link cannot be turned into its platform's shape is not rendered: when it becomes due, the Worker records its reminder as `failed` with `no_contest_link` ([architecture.md](architecture.md#reminder-lifecycle)). |
 | `PUT /tips` | Accepts only a tip that is valid free text of at most 500 code points, or the empty string, which suppresses the tip for that contest. |
-| Tip override loader | Ignores a stored override that is not a valid tip, so the contest gets its configured tip instead. |
+| Tip override loader | Ignores a stored override that is not a valid tip, so the contest gets its configured tip instead, and logs it. |
 | Configured tips | A Worker test checks every tip in `worker/config/tips.json`. |
 | Sender | Parses the whole text with `reminder.Parse` and refuses it unless every rule above holds. A refused reminder is acknowledged as `rejected`, which the Worker records as `failed` at once ([architecture.md](architecture.md#reminder-lifecycle)). |
 
 The free-text rules exist twice, in `worker/src/core/text.ts` and in `sender/internal/reminder`, so that the Worker can produce texts the sender accepts and the sender can refuse anything else on its own.
+
+Both implementations classify characters with their runtime's Unicode tables: the Workers runtime's JavaScript engine for the Worker, Go's `unicode` package for the sender. The classification is identical as long as the Worker's tables are not newer than the sender's. A code point that only the Worker's tables assign would pass the Worker as a letter or symbol and be refused by the sender as unassigned, so the reminder would fail loudly as `rejected`, never be posted unchecked. When the Worker's tables are older, a code point that only Go assigns is not graphic to the Worker and is removed from contest names before rendering, which is the direction the two runtimes are in today.
 
 ## Shared test data
 

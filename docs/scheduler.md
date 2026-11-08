@@ -10,8 +10,8 @@ The Worker in `worker/` fetches contests, queues reminders in D1, wakes the send
 | `src/router.ts` | Path and method matching; bearer authentication per route. |
 | `src/auth.ts` | Bearer parsing and constant-time comparison of SHA-256 digests. |
 | `src/core/` | Contest selection, message formatting ([formatter.md](formatter.md)) and the free-text rules of the reminder format ([reminder-format.md](reminder-format.md)). |
-| `src/contests.ts` | Contest snapshot: clist, with the Codeforces API as fallback. |
-| `src/tick.ts` | One tick: refresh the snapshot, queue due reminders, expire, wake. |
+| `src/contests.ts` | Contest snapshot: clist, with the Codeforces API as fallback, and the count of upcoming contests without a contest link. |
+| `src/tick.ts` | One tick: refresh the snapshot, queue due reminders or record them as `no_contest_link` failures, expire, wake. |
 | `src/reminders.ts` | Claim, acknowledgement, lease and expiry SQL. |
 | `src/wake.ts` | `workflow_dispatch` of `send.yml`, debounced. |
 | `src/outbox.ts`, `src/admin.ts` | Request validation and handlers for the outbox and admin routes. |
@@ -54,6 +54,15 @@ curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: applica
 The second `PUT` suppresses the tip for that contest; the `DELETE` removes the one-off tip.
 
 `/health` reports a failed fetch or dispatch only as a code ([error codes](architecture.md#error-codes)). The full error is in the `POST /tick` response and in the Worker's log: Workers Logs in the Cloudflare dashboard, or live with `pnpm exec wrangler tail` in `worker/`.
+
+The Worker also logs, with `console.error`:
+
+| Line | When |
+|---|---|
+| `<n> upcoming contest(s) without a contest link` | A snapshot refresh finds selected contests whose link has no contest-page shape ([formatter.md](formatter.md#contest-links)); `/health` shows the count as `unlinkedContests`. |
+| `no contest link: <key>` | The tick records such a contest's reminder as `failed`; `POST /tick` also returns the line in `errors`. |
+| `contest name replaced by the fallback name: <key>` | The tick queues a reminder whose name could not be made valid free text. |
+| `ignoring the stored tip for <href>: not a valid tip` | Tips are loaded and a one-off tip in D1 is not valid free text. |
 
 ## D1 behaviour the code depends on
 
