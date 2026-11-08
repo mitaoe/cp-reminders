@@ -297,12 +297,12 @@ func TestSummaryRendersUnackedItemValuesLiterally(t *testing.T) {
 	}
 }
 
-func TestRunReportsInvalidItemsWithoutTheirText(t *testing.T) {
-	refusedText := "REFUSED" + strings.Repeat("x", MaxTextRunes)
+func TestRunReportsInvalidItemsOnlyAsRefusedWithoutTheirText(t *testing.T) {
 	h := newHarness(
-		outbox.Item{Key: "too-long", Text: refusedText, StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"},
-		outbox.Item{Key: "fine", Text: "fine reminder", StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"},
+		outbox.Item{Key: "refused", Text: "REFUSED join evil.com", StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"},
+		item("fine", "fine reminder"),
 	)
+	h.sess.sendErr = map[string]error{"fine reminder": errors.New("send: timeout")}
 	if err := h.d.Run(context.Background()); err == nil {
 		t.Fatal("Run succeeded with an invalid item")
 	}
@@ -310,8 +310,15 @@ func TestRunReportsInvalidItemsWithoutTheirText(t *testing.T) {
 	if strings.Contains(got, "REFUSED") {
 		t.Errorf("summary shows the text of an invalid item:\n%s", got)
 	}
-	if !strings.Contains(got, "Refused by validation") || !strings.Contains(got, "\n- `too-long`: `text is ") {
+	if !strings.Contains(got, "Refused by validation") || !strings.Contains(got, "\n- `refused`: `text is ") {
 		t.Errorf("summary does not list the invalid item as refused:\n%s", got)
+	}
+	manual, _, _ := strings.Cut(got, "Refused by validation")
+	if strings.Contains(manual, "`refused`") {
+		t.Errorf("summary lists the invalid item for posting by hand:\n%s", got)
+	}
+	if !strings.Contains(manual, "fine reminder") {
+		t.Errorf("summary does not offer the valid unsent item for posting by hand:\n%s", got)
 	}
 }
 

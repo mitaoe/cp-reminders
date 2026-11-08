@@ -1,4 +1,3 @@
-// Package drain delivers claimed outbox items to the announcement group.
 package drain
 
 import (
@@ -18,45 +17,36 @@ import (
 const ackTimeout = time.Minute
 
 var (
-	// ErrNotAnnouncements is returned when the target is not a community announcements group.
 	ErrNotAnnouncements = errors.New("target is not a community announcements group")
-	// ErrNotAdmin is returned when the sender is not an admin of the target.
-	ErrNotAdmin = errors.New("sender is not an admin of the target group")
+	ErrNotAdmin         = errors.New("sender is not an admin of the target group")
 
 	errNotAttempted = errors.New("not attempted: an earlier step failed")
 )
 
-// Outbox claims and acknowledges queued items.
 type Outbox interface {
 	Claim(ctx context.Context, claimID string) ([]outbox.Item, error)
 	Ack(ctx context.Context, req outbox.AckRequest) error
 }
 
-// Group describes the target group as seen by the sender.
 type Group struct {
 	IsAnnouncements bool
 	IsAdmin         bool
 }
 
-// Session is a connected WhatsApp client. Close disconnects and persists it.
 type Session interface {
 	Group(ctx context.Context, jid string) (Group, error)
 	SendText(ctx context.Context, jid, text string) (messageID string, err error)
 	Close() error
 }
 
-// Dialer opens and connects a Session.
 type Dialer func(ctx context.Context) (Session, error)
 
-// Ledger is the local record of delivered items.
 type Ledger interface {
 	Lookup(key string) (state.Entry, bool)
 	SentSince(t time.Time) int
 	Record(e state.Entry) error
 }
 
-// Drainer runs one claim, deliver, ack cycle. Zero-valued function fields use
-// the real clock, randomness and sleep.
 type Drainer struct {
 	Outbox       Outbox
 	Dial         Dialer
@@ -72,8 +62,6 @@ type Drainer struct {
 	NewClaimID   func() string
 }
 
-// Run drains the outbox once. It returns an error if any claimed item was not
-// delivered and acknowledged, after writing a failure report to Summary.
 func (d *Drainer) Run(ctx context.Context) error {
 	if err := ValidateTarget(d.Target); err != nil {
 		return err
@@ -98,7 +86,7 @@ func (d *Drainer) Run(ctx context.Context) error {
 	for i, verr := range invalid {
 		key := items[i].Key
 		if verr != nil {
-			results[i] = failedResult(key, verr)
+			results[i] = outbox.Result{Key: key, Status: outbox.StatusRejected, Error: oneLine(verr.Error())}
 			failures = append(failures, fmt.Errorf("invalid item %q: %w", key, verr))
 			continue
 		}

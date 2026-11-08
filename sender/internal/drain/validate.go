@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"cp-reminders/sender/internal/outbox"
 	"cp-reminders/sender/internal/reminder"
@@ -12,7 +11,6 @@ import (
 
 const (
 	MaxItems      = 5
-	MaxTextRunes  = 1000
 	MaxSentPerDay = 8
 )
 
@@ -46,10 +44,6 @@ func validateItem(it outbox.Item, duplicate bool) error {
 		return errors.New("empty key")
 	case duplicate:
 		return errors.New("duplicate key in claim")
-	case strings.TrimSpace(it.Text) == "":
-		return errors.New("empty text")
-	case utf8.RuneCountInString(it.Text) > MaxTextRunes:
-		return fmt.Errorf("text is %d characters, more than the limit of %d", utf8.RuneCountInString(it.Text), MaxTextRunes)
 	}
 	_, err := reminder.Parse(it.Text)
 	return err

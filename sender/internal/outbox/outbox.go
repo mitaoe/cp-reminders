@@ -1,4 +1,3 @@
-// Package outbox is a client for the Worker's /outbox API.
 package outbox
 
 import (
@@ -20,7 +19,6 @@ const (
 	ackAttempts      = 3
 )
 
-// Item is a queued reminder returned by /outbox/claim.
 type Item struct {
 	Key         string `json:"key"`
 	Text        string `json:"text"`
@@ -28,26 +26,22 @@ type Item struct {
 	DeadlineUTC string `json:"deadlineUtc"`
 }
 
-// ClaimRequest is the body of /outbox/claim.
 type ClaimRequest struct {
 	ClaimID string `json:"claimId"`
 }
 
-// ClaimResponse is the response of /outbox/claim.
 type ClaimResponse struct {
 	Items []Item `json:"items"`
 }
 
-// Status is the delivery outcome reported in an ack.
 type Status string
 
-// Delivery outcomes.
 const (
-	StatusSent   Status = "sent"
-	StatusFailed Status = "failed"
+	StatusSent     Status = "sent"
+	StatusFailed   Status = "failed"
+	StatusRejected Status = "rejected"
 )
 
-// Result is the outcome for one claimed item.
 type Result struct {
 	Key       string `json:"key"`
 	Status    Status `json:"status"`
@@ -55,13 +49,11 @@ type Result struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// AckRequest is the body of /outbox/ack.
 type AckRequest struct {
 	ClaimID string   `json:"claimId"`
 	Results []Result `json:"results"`
 }
 
-// StatusError is returned for a non-2xx response.
 type StatusError struct {
 	Op   string
 	Code int
@@ -76,7 +68,6 @@ func (e *StatusError) retryable() bool {
 	return e.Code == http.StatusTooManyRequests || e.Code >= 500
 }
 
-// Client calls the outbox API.
 type Client struct {
 	BaseURL        string
 	Token          string
@@ -85,7 +76,6 @@ type Client struct {
 	Backoff        func(attempt int) time.Duration
 }
 
-// New returns a Client with default timeouts and retry policy.
 func New(baseURL, token string) *Client {
 	return &Client{
 		BaseURL:        strings.TrimRight(baseURL, "/"),
@@ -96,8 +86,6 @@ func New(baseURL, token string) *Client {
 	}
 }
 
-// Claim claims queued items under claimID. It is never retried, because a
-// repeated claim would strand the items returned by a lost first response.
 func (c *Client) Claim(ctx context.Context, claimID string) ([]Item, error) {
 	var resp ClaimResponse
 	if err := c.post(ctx, "claim", ClaimRequest{ClaimID: claimID}, &resp); err != nil {
@@ -106,7 +94,6 @@ func (c *Client) Claim(ctx context.Context, claimID string) ([]Item, error) {
 	return resp.Items, nil
 }
 
-// Ack reports results for claimID, retrying transient failures.
 func (c *Client) Ack(ctx context.Context, req AckRequest) error {
 	var err error
 	for attempt := 1; attempt <= ackAttempts; attempt++ {

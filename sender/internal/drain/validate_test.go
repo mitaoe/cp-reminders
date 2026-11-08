@@ -1,7 +1,6 @@
 package drain
 
 import (
-	"strings"
 	"testing"
 
 	"cp-reminders/sender/internal/outbox"
@@ -41,8 +40,6 @@ func TestValidateItems(t *testing.T) {
 	}{
 		{"ok", []outbox.Item{item("a", "hi"), item("b", "there")}, []bool{false, false}},
 		{"empty text", []outbox.Item{rawItem("a", "")}, []bool{true}},
-		{"whitespace text", []outbox.Item{rawItem("a", " \n\t")}, []bool{true}},
-		{"more than the text limit", []outbox.Item{rawItem("a", strings.Repeat("x", MaxTextRunes+1))}, []bool{true}},
 		{"not a reminder", []outbox.Item{item("a", "ok"), rawItem("b", "join evil.com")}, []bool{false, true}},
 		{"empty key", []outbox.Item{item("", "hi")}, []bool{true}},
 		{"duplicate key", []outbox.Item{item("a", "hi"), item("a", "again")}, []bool{false, true}},
@@ -61,14 +58,6 @@ func TestValidateItems(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestLongestReminderFitsTheTextLimit(t *testing.T) {
-	r := reminderFor(strings.Repeat("é", reminder.MaxNameRunes))
-	r.Tip = strings.Repeat("x", reminder.MaxTipRunes)
-	if errs := ValidateItems([]outbox.Item{rawItem("a", r.String())}); errs[0] != nil {
-		t.Errorf("longest reminder refused: %v", errs[0])
 	}
 }
 

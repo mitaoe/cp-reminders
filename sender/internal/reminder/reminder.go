@@ -12,8 +12,9 @@ import (
 const Header = "🚨 Contest Reminder 🚨"
 
 const (
-	MaxNameRunes = 200
-	MaxTipRunes  = 500
+	MaxNameRunes  = 200
+	MaxTipRunes   = 500
+	MaxLinkLength = 200
 )
 
 const (
@@ -25,12 +26,22 @@ const (
 	tipField      = "📌 Tip: "
 )
 
-var hosts = map[string]string{
-	"Codeforces": "codeforces.com",
-	"Codechef":   "codechef.com",
-	"Atcoder":    "atcoder.jp",
-	"LeetCode":   "leetcode.com",
+var links = map[string]*regexp.Regexp{
+	"Codeforces": regexp.MustCompile(`^https://codeforces\.com/contests/[0-9]+$`),
+	"Codechef":   regexp.MustCompile(`^https://www\.codechef\.com/[A-Za-z0-9]+$`),
+	"Atcoder":    regexp.MustCompile(`^https://atcoder\.jp/contests/[A-Za-z0-9_-]+$`),
+	"LeetCode":   regexp.MustCompile(`^https://leetcode\.com/contest/[a-z0-9-]+/$`),
 }
+
+const dots = `.\x{3002}\x{ff0e}\x{ff61}\x{fe52}`
+
+var (
+	timingPattern   = regexp.MustCompile(`^(?:1[0-2]|[1-9]):[0-5][0-9] [AP]M$`)
+	durationPattern = regexp.MustCompile(`^[0-9]{1,2}(?::[0-5][0-9])? hours$`)
+	domainPattern   = regexp.MustCompile(`[\p{L}\p{M}\p{N}-]+(?:[` + dots + `][\p{L}\p{M}\p{N}-]+)*[` + dots + `]\p{L}[\p{L}\p{M}]+`)
+	ipv4Pattern     = regexp.MustCompile(`[0-9]{1,3}(?:[` + dots + `][0-9]{1,3}){3}`)
+	phonePattern    = regexp.MustCompile(`\p{Nd}(?:[\p{Zs}\p{Pd}()./~\x{2212}]*\p{Nd}){9,}`)
+)
 
 type Reminder struct {
 	Platform string
@@ -40,15 +51,6 @@ type Reminder struct {
 	Link     string
 	Tip      string
 }
-
-var (
-	timingPattern   = regexp.MustCompile(`^(?:1[0-2]|[1-9]):[0-5][0-9] [AP]M$`)
-	durationPattern = regexp.MustCompile(`^[0-9]{1,2}(?::[0-5][0-9])? hours$`)
-	linkPathPattern = regexp.MustCompile(`^(?:/[A-Za-z0-9/_.-]*)?$`)
-	domainPattern   = regexp.MustCompile(`(?i)[\p{L}\p{N}-]+(?:[.\x{3002}\x{ff0e}\x{ff61}][\p{L}\p{N}-]+)*[.\x{3002}\x{ff0e}\x{ff61}]\p{L}{2,}`)
-	ipv4Pattern     = regexp.MustCompile(`[0-9]{1,3}(?:[.\x{3002}\x{ff0e}\x{ff61}][0-9]{1,3}){3}`)
-	phonePattern    = regexp.MustCompile(`[0-9](?:[ ()\-.]*[0-9]){9,}`)
-)
 
 func (r Reminder) String() string {
 	lines := []string{
@@ -108,7 +110,7 @@ func Parse(text string) (Reminder, error) {
 }
 
 func (r Reminder) check() error {
-	host, ok := hosts[r.Platform]
+	link, ok := links[r.Platform]
 	if !ok {
 		return errors.New("unknown platform")
 	}
@@ -121,23 +123,11 @@ func (r Reminder) check() error {
 	if !durationPattern.MatchString(r.Duration) {
 		return errors.New("duration is not like 2:15 hours")
 	}
-	if err := checkLink(r.Link, host); err != nil {
-		return err
+	if len(r.Link) > MaxLinkLength || !link.MatchString(r.Link) {
+		return fmt.Errorf("contest link is not a %s contest link", r.Platform)
 	}
 	if r.Tip != "" {
 		return checkText("tip", r.Tip, MaxTipRunes)
-	}
-	return nil
-}
-
-func checkLink(link, host string) error {
-	rest, ok := strings.CutPrefix(link, "https://")
-	if !ok {
-		return errors.New("contest link is not an https link")
-	}
-	path, ok := strings.CutPrefix(strings.TrimPrefix(rest, "www."), host)
-	if !ok || !linkPathPattern.MatchString(path) {
-		return fmt.Errorf("contest link is not a plain link to %s", host)
 	}
 	return nil
 }

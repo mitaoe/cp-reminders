@@ -142,12 +142,13 @@ func TestAckRequestBody(t *testing.T) {
 		Results: []Result{
 			{Key: "a", Status: StatusSent, MessageID: "3EB0ABC"},
 			{Key: "b", Status: StatusFailed, Error: "send: timeout"},
+			{Key: "c", Status: StatusRejected, Error: "text is not in the reminder layout"},
 		},
 	})
 	if err != nil {
 		t.Fatalf("Ack: %v", err)
 	}
-	want := `{"claimId":"c1","results":[{"key":"a","messageId":"3EB0ABC","status":"sent"},{"error":"send: timeout","key":"b","status":"failed"}]}`
+	want := `{"claimId":"c1","results":[{"key":"a","messageId":"3EB0ABC","status":"sent"},{"error":"send: timeout","key":"b","status":"failed"},{"error":"text is not in the reminder layout","key":"c","status":"rejected"}]}`
 	got, _ := json.Marshal(raw)
 	if string(got) != want {
 		t.Errorf("ack body:\n got %s\nwant %s", got, want)

@@ -280,7 +280,7 @@ func TestLedgerHitIsNotResent(t *testing.T) {
 		outbox.Result{Key: "k2", Status: outbox.StatusSent, MessageID: "MSG1"})
 }
 
-func TestInvalidItemsAreFailedOthersSent(t *testing.T) {
+func TestInvalidItemsAreRejectedOthersSent(t *testing.T) {
 	h := newHarness(rawItem("k1", ""), item("k2", "ok"))
 	err := h.d.Run(context.Background())
 	if err == nil {
@@ -290,7 +290,7 @@ func TestInvalidItemsAreFailedOthersSent(t *testing.T) {
 		t.Errorf("sent: %v", h.sess.sent)
 	}
 	wantResults(t, h.ack(t).Results,
-		outbox.Result{Key: "k1", Status: outbox.StatusFailed, Error: "empty text"},
+		outbox.Result{Key: "k1", Status: outbox.StatusRejected, Error: "layout"},
 		outbox.Result{Key: "k2", Status: outbox.StatusSent, MessageID: "MSG1"})
 }
 
@@ -307,7 +307,7 @@ func TestTooManyItemsSendsNothing(t *testing.T) {
 		t.Error("dialled for an oversized claim")
 	}
 	for _, r := range h.ack(t).Results {
-		if r.Status != outbox.StatusFailed {
+		if r.Status != outbox.StatusRejected {
 			t.Errorf("result %+v", r)
 		}
 	}
