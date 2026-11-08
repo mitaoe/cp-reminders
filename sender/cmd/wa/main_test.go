@@ -259,7 +259,7 @@ func TestLoggerRedactsWhatsAppIDs(t *testing.T) {
 	t.Cleanup(func() { os.Stdout = stdout })
 
 	f := newFlags("drain", io.Discard, true)
-	if err := f.parse([]string{"--state", t.TempDir()}); err != nil {
+	if err := f.parse([]string{"--state", t.TempDir(), "--log-level", "WARN"}); err != nil {
 		t.Fatal(err)
 	}
 	f.logger().Sub("Client").Warnf("retry receipt from %s", "919876543210@s.whatsapp.net")
@@ -283,6 +283,34 @@ func TestLoggerRedactsWhatsAppIDs(t *testing.T) {
 		if strings.Contains(string(out), leak) {
 			t.Errorf("output %q contains %q", out, leak)
 		}
+	}
+}
+
+func TestLoggerNeverPrintsSignalDebug(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout := os.Stdout
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = stdout })
+
+	f := newFlags("drain", io.Discard, true)
+	if err := f.parse([]string{"--state", t.TempDir(), "--log-level", "DEBUG"}); err != nil {
+		t.Fatal(err)
+	}
+	f.logger().Debugf("whatsmeow debug line")
+	signallog.Debug("Using cipherKey: [1 2 3 250]")
+	w.Close()
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "[wa DEBUG] whatsmeow debug line") {
+		t.Errorf("output %q lacks the whatsmeow debug line", out)
+	}
+	if strings.Contains(string(out), "cipherKey") {
+		t.Errorf("output %q contains a libsignal debug line", out)
 	}
 }
 

@@ -106,7 +106,7 @@ func newFlags(name string, out io.Writer, withState bool) *flags {
 	f := &flags{FlagSet: fs}
 	if withState {
 		f.state = fs.String("state", "", "state directory holding "+state.SessionFile+" and "+state.LedgerFile+" (required)")
-		f.logLevel = fs.String("log-level", "WARN", "whatsmeow log level: DEBUG, INFO, WARN or ERROR")
+		f.logLevel = fs.String("log-level", "WARN", "whatsmeow and libsignal log level: DEBUG, INFO, WARN or ERROR")
 	}
 	return f
 }

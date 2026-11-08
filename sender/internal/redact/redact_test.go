@@ -81,21 +81,20 @@ func TestLoggerRedactsEveryLevelAndSubLogger(t *testing.T) {
 	)
 }
 
-func TestSignalLoggerRedactsAndForwardsEveryLevel(t *testing.T) {
+func TestSignalLoggerRedactsAndForwardsAllButDebug(t *testing.T) {
 	var lines []string
 	log := Signal(capture{lines: &lines, mod: "wa/Signal"})
 
 	log.Error("SessionCipher.go:300", "no session found for user 123456789012345_1:5")
 	log.Warning("SessionCipher.go:263", "invalid message from 919876543210:3")
 	log.Info("GroupCipher.go:86", "100% of 3")
-	log.Debug("SessionBuilder.go:50", "processing 123456789012345_128:2")
+	log.Debug("SessionCipher.go:400", "Using cipherKey: [1 2 3 250]")
 	log.Configure("all")
 
 	wantLines(t, lines,
 		"ERROR wa/Signal SessionCipher.go:300: no session found for user <number>:5",
 		"WARN wa/Signal SessionCipher.go:263: invalid message from <number>:3",
 		"INFO wa/Signal GroupCipher.go:86: 100% of 3",
-		"DEBUG wa/Signal SessionBuilder.go:50: processing <number>:2",
 	)
 }
 

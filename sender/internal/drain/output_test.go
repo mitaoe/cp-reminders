@@ -31,7 +31,7 @@ func TestLogfRedactsWhatsAppIDs(t *testing.T) {
 	}
 }
 
-func TestTargetCheckLogsOnlyTheVerification(t *testing.T) {
+func TestTargetCheckLogsTheVerification(t *testing.T) {
 	h := newHarness(item("k1", "first"))
 	if err := h.d.Run(context.Background()); err != nil {
 		t.Fatalf("Run: %v", err)

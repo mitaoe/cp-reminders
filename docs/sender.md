@@ -13,7 +13,7 @@ Run from the repository root as `go -C sender run ./cmd/wa <command>`; a relativ
 | `wa groups --state DIR` | Lists joined groups with their community flags and our admin status, marks every community Announcements group with an `ANNOUNCEMENTS CANDIDATE:` line, and saves the session. | Yes |
 | `wa drain --state DIR [--jitter 90s] [--dry-run]` | One claim, deliver and acknowledge cycle ([Drain](#drain)). | Only when something is pending |
 
-Shared flags: `--log-level` (whatsmeow log level, `WARN` by default) and `--connect-timeout` (60 s). `drain` and `groups` take `--timeout` for the whole run (4 minutes and 90 seconds); `pair` allows 5 minutes.
+Shared flags: `--log-level` (whatsmeow and libsignal log level, `WARN` by default) and `--connect-timeout` (60 s). `drain` and `groups` take `--timeout` for the whole run (4 minutes and 90 seconds); `pair` allows 5 minutes.
 
 Exit codes: `0` on success, including an empty outbox; `1` on any failure; `2` on a usage error.
 
@@ -69,14 +69,14 @@ It is applied to:
 | Output | How |
 |---|---|
 | whatsmeow's log lines | Its logger is wrapped, at every level and in every sub-logger. |
-| libsignal's log lines | libsignal's process-wide logger is set to the same wrapped logger, as sub-logger `Signal`, so it also follows `--log-level`. |
+| libsignal's log lines | libsignal's process-wide logger is set to the same wrapped logger, as sub-logger `Signal`, so it also follows `--log-level`. Only its errors, warnings and info lines are forwarded; its debug lines contain message keys and ciphertext and are dropped at every level. |
 | The sender's own log lines | Every line it prints. |
 | The job summary | The run error, each reminder's failure reason and the acknowledgement error. |
 | The final `wa: …` line | The error that ends the run. |
 
 The target group is reported only as verified or refused, never by name.
 
-Left unchanged: reminder texts, in the failure summary and in `--dry-run` output, so they can be posted as they are; reminder keys, claim IDs and message IDs, which identify no person.
+Reminder texts are printed unchanged, in the failure summary and in `--dry-run` output, so they can be posted as they are. Reminder keys, claim IDs and message IDs identify no person and are not treated as identifiers.
 
 Not covered: phone numbers written with spaces or dashes, which neither whatsmeow nor libsignal writes, and the message of a Go runtime panic, which the runtime prints itself.
 

@@ -52,8 +52,9 @@ func (l logger) Sub(module string) waLog.Logger {
 	return logger{next: l.next.Sub(module)}
 }
 
-// Signal returns a logger for libsignal that redacts each message with String
-// and passes it, prefixed with its caller, to next at the same level.
+// Signal returns a logger for libsignal that redacts each error, warning and
+// info message with String and passes it, prefixed with its caller, to next at
+// the same level. Debug messages, which contain key material, are dropped.
 func Signal(next waLog.Logger) signallog.Loggable {
 	return signal{next: Logger(next)}
 }
@@ -65,5 +66,5 @@ type signal struct {
 func (s signal) Error(caller, msg string)   { s.next.Errorf("%s: %s", caller, msg) }
 func (s signal) Warning(caller, msg string) { s.next.Warnf("%s: %s", caller, msg) }
 func (s signal) Info(caller, msg string)    { s.next.Infof("%s: %s", caller, msg) }
-func (s signal) Debug(caller, msg string)   { s.next.Debugf("%s: %s", caller, msg) }
+func (s signal) Debug(string, string)       {}
 func (s signal) Configure(string)           {}
