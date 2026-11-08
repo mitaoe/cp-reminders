@@ -20,20 +20,35 @@ Every job of the two bot workflows checks the variable, so in any other reposito
 
 The Worker starts `send.yml` through `workflow_dispatch` with no inputs ([architecture.md](architecture.md#workflow-dispatch)); it has no other trigger. Because every run drains the whole outbox, an extra or a missing wake-up does no harm.
 
+It has two jobs, so that the token that can write to the repository never shares a runner with the sender and its dependencies:
+
+| Job | Permissions | Runs |
+|---|---|---|
+| `drain` (Drain Outbox) | `contents: read` | The sender, with its secrets. |
+| `persist` (Persist State), `needs: drain` | `contents: write` | No repository code: a pinned artifact action and `git`, pushing only `refs/heads/state`. |
+
+Code in the `drain` job can at most change the two state files it hands over; it cannot obtain a token that writes `main` or any other branch.
+
 | Aspect | Setting | Reason |
 |---|---|---|
-| Concurrency | `group: wa-session`, `cancel-in-progress: false` | WhatsApp allows one live connection per session and the keys rotate on every connection, so runs are serialised. A running job is never cancelled, and at most one run waits as pending; a newer pending run replaces it ([concurrency](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/control-the-concurrency-of-workflows-and-jobs)). |
-| Permissions | `contents: write` | Pushing branch `state` with the built-in token. |
-| Timeout | 6 minutes | The sender's own limit is 4 minutes, including up to 90 s of jitter. |
+| Concurrency | `group: wa-session`, `cancel-in-progress: false` | WhatsApp allows one live connection per session and the keys rotate on every connection, so runs are serialised, both jobs included. A running workflow is never cancelled, and at most one run waits as pending; a newer pending run replaces it ([concurrency](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/control-the-concurrency-of-workflows-and-jobs)). |
+| Permissions | `{}` for the workflow, then per job as above | Each job gets only what it uses. |
+| Timeout | `drain` 6 minutes, `persist` 5 minutes | The sender's own limit is 4 minutes, including up to 90 s of jitter. |
 | Checkout | `main` with `persist-credentials: false` | No token remains in `.git/config` while the sender runs. |
-| Secrets | Passed to the step through `env:` | Expressions appear only in `env:` and `with:`, never inside a script. The secrets are listed in [architecture.md](architecture.md#secrets). |
+| Secrets | Passed to the drain step through `env:` | Expressions appear only in `env:` and `with:`, never inside a script. The secrets are listed in [architecture.md](architecture.md#secrets). |
 
-Steps:
+`drain` steps:
 
-1. **Fetch state branch.** Initialises `./state` as a repository on branch `state` and fetches branch `state` with an `http.extraheader` built from `github.token` for that command only. When the branch does not exist yet, `./state` stays an empty orphan branch. The fetched commit is kept as `STATE_SHA`.
+1. **Fetch state branch.** Initialises `./state` as a repository on branch `state` and fetches branch `state` with an `http.extraheader` built from `github.token` for that command only. When the branch does not exist yet, `./state` stays an empty orphan branch. The fetched commit is the job output `state-sha`.
 2. **Set up Go** from `sender/go.mod`, with the module cache keyed on `sender/go.sum`.
 3. **Drain the outbox.** `go run ./cmd/wa drain --state "$GITHUB_WORKSPACE/state"` in `sender/`, which is its own module (`cp-reminders/sender`). On failure the sender writes the unsent texts to the job summary, and GitHub emails the owner about the failed run.
-4. **Persist state** (`if: always()`, because the keys rotate even when the drain fails). If `session.db.age` or `sent.json` changed, the step commits exactly those files, and only those that exist, as a single orphan commit by `github-actions[bot]`, then runs `git push --force-with-lease="state:$STATE_SHA" origin next:refs/heads/state`. The allowlist keeps a plaintext `session.db` out of the repository, the single commit keeps the repository from growing, and the lease rejects the push if the branch moved since step 1; an empty `STATE_SHA` requires that the branch does not exist.
+4. **Detect state changes** (`if: always()`, because the keys rotate even when the drain fails): the job output `changed` is `true` when `session.db.age` or `sent.json` differs from the fetched commit.
+5. **Upload state** when changed: exactly those two files, as artifact `state` kept for one day. The artifact holds the same encrypted session that branch `state` publishes.
+
+`persist` runs after `drain`, whatever its result, when `changed` is `true`:
+
+1. **Download state** into an empty directory.
+2. **Push state branch.** Checks that `state-sha` is empty or a commit ID, initialises a new repository, commits the files that exist as a single commit by `github-actions[bot]`, and runs `git push --force-with-lease="refs/heads/state:$STATE_SHA" origin HEAD:refs/heads/state`. The allowlist keeps a plaintext `session.db` out of the repository, the single commit keeps the repository from growing, and the lease rejects the push if the branch moved since the fetch; an empty `state-sha` requires that the branch does not exist.
 
 ## deploy.yml: deploy the Worker
 

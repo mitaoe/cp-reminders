@@ -80,7 +80,7 @@ flowchart LR
 4. **Text is rendered once, when the reminder is queued.** The stored text is exactly what is sent, which makes the outbox an audit log.
 5. **Only the sender knows the destination.** `ANNOUNCE_JID` is a secret of the deployment repository. The sender refuses any chat that is not a community announcements group in which it is admin. A compromised Worker can at most post text into Announcements, five messages per run.
 6. **Two independent guards against duplicates.** D1's primary key on the reminder key, and the sender's own `sent.json`, which covers a message that was sent but whose acknowledgement was lost.
-7. **The session lives on a single-commit branch.** Branch `state` of the deployment repository holds `session.db.age` and `sent.json`. Each run force-pushes one commit with a lease check, so the repository does not grow, and the workflow's concurrency group serialises the writes.
+7. **The session lives on a single-commit branch.** Branch `state` of the deployment repository holds `session.db.age` and `sent.json`. Each run force-pushes one commit with a lease check, so the repository does not grow, and the workflow's concurrency group serialises the writes. The push happens in a separate job from the sender, so the only token that writes to the repository never runs alongside the sender's code.
 
 ## Data
 
