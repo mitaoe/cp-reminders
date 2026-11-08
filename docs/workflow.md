@@ -27,7 +27,7 @@ It has two jobs, so that the token that can write to the repository never shares
 | `drain` (Drain Outbox) | `contents: read` | The sender, with its secrets. |
 | `persist` (Persist State), `needs: drain` | `contents: write` | No repository code: a pinned artifact action and `git`, pushing only `refs/heads/state`. |
 
-What `drain` hands to `persist` is untrusted: the artifact's contents and the outputs `changed` and `state-sha`. `persist` uses only the bytes of two regular files from the artifact and a value of `state-sha` that is empty or a commit ID; the artifact never becomes part of a git directory, and git runs without system or global configuration and without hooks. Code in `drain` can therefore choose what branch `state` holds, which it can already do with `AGE_IDENTITY`, but cannot obtain a token that writes `main`. It can also write Actions cache entries in the `main` scope, which `drain`, both jobs of `ci.yml` and both jobs of `deploy.yml` restore; `pnpm/setup` restores its lockfile-verification cache even in the `deploy` job, which does not use the pnpm store cache.
+What `drain` hands to `persist` is untrusted: the artifact's contents and the outputs `changed` and `state-sha`. `persist` uses only the bytes of two regular files from the artifact and a value of `state-sha` that is empty or a commit ID; the artifact never becomes part of a git directory, and git runs without system or global configuration and without hooks. Code in `drain` can therefore choose what branch `state` holds, which it can already do with `AGE_IDENTITY`, but cannot obtain a token that writes `main`. It can also write Actions cache entries in the `main` scope, which `drain`, both jobs of `ci.yml` and the `check` job of `deploy.yml` restore; none of them holds the write token or the Cloudflare token, and the `deploy` job restores no cache.
 
 | Aspect | Setting | Reason |
 |---|---|---|
@@ -62,12 +62,12 @@ Runs on a push to `main` that changes `worker/`, the workspace files (`package.j
 | Permissions | `contents: read` | It only reads the code. |
 | Jobs | `check`, then `deploy` (`needs: check`), each on its own runner | The typecheck and the tests, which run the test framework and the repository's test code, never run on the runner that receives the Cloudflare token. |
 | Secrets | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` in the `env:` of the migration and deploy steps of `deploy` | Wrangler reads both from the environment ([system environment variables](https://developers.cloudflare.com/workers/wrangler/system-environment-variables/)). Wrangler and the packages it loads necessarily run with the token. |
-| Cache | `check` restores and saves the pnpm store; `deploy` does not use it and installs from the registry | Nothing written by a job that ran test code reaches the runner that receives the token, and every package `deploy` installs is checked against the lockfile's hashes. |
+| Cache | `check` sets up with [`pnpm/setup`](https://github.com/pnpm/setup), which restores and saves the pnpm store and its lockfile-verification cache. `deploy` restores no cache: [`actions/setup-node`](https://github.com/actions/setup-node) installs Node 24 with `package-manager-cache: false` and no `cache` input, `npm install --global` installs the pnpm version in the root `packageManager` field, and `pnpm install --frozen-lockfile` installs the workspace from the registry. | No Actions cache entry, which any job on `main` can write, reaches the runner that receives the token. npm checks the pnpm package against the registry's integrity hash, and pnpm checks every dependency against the lockfile's hashes. |
 
-Jobs, in `worker/`:
+Jobs:
 
-1. `check`: typecheck and test, so a change that fails the checks is never deployed.
-2. `deploy`: apply pending D1 migrations (`pnpm run db:migrate:remote`), then deploy with `pnpm run deploy --message "$GITHUB_SHA"`, which keeps the Worker's stored secrets.
+1. `check`, in `worker/`: typecheck and test, so a change that fails the checks is never deployed.
+2. `deploy`: set up Node and pnpm and install the workspace without any cache, then, in `worker/`, apply pending D1 migrations (`pnpm run db:migrate:remote`) and deploy with `pnpm run deploy --message "$GITHUB_SHA"`, which keeps the Worker's stored secrets.
 
 ## ci.yml: checks
 
