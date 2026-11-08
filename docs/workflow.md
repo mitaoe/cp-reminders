@@ -40,9 +40,14 @@ Runs on a push to `main` that changes `worker/`, the workspace files (`package.j
 |---|---|---|
 | Concurrency | `group: deploy-worker`, `cancel-in-progress: false` | Deploys run one at a time and in order. |
 | Permissions | `contents: read` | It only reads the code. |
-| Secrets | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` in the `env:` of the migration and deploy steps only | Wrangler reads both from the environment ([CI/CD](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)). The install, typecheck and test steps run third-party package code and never see the token. |
+| Jobs | `check`, then `deploy` (`needs: check`), each on its own runner | The typecheck and the tests, which run the test framework and the repository's test code, never run on the runner that receives the Cloudflare token. |
+| Secrets | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` in the `env:` of the migration and deploy steps of `deploy` | Wrangler reads both from the environment ([system environment variables](https://developers.cloudflare.com/workers/wrangler/system-environment-variables/)). Wrangler and the packages it loads necessarily run with the token. |
+| Cache | `check` restores and saves the pnpm store; `deploy` only restores it (`save-cache: false`) | A job that held the token never writes the cache. |
 
-Steps, in `worker/`: typecheck and test, so a change that fails the checks is never deployed; apply pending D1 migrations (`pnpm run db:migrate:remote`); deploy with `pnpm run deploy --message "$GITHUB_SHA"`, which keeps the Worker's stored secrets.
+Jobs, in `worker/`:
+
+1. `check`: typecheck and test, so a change that fails the checks is never deployed.
+2. `deploy`: apply pending D1 migrations (`pnpm run db:migrate:remote`), then deploy with `pnpm run deploy --message "$GITHUB_SHA"`, which keeps the Worker's stored secrets.
 
 ## ci.yml: checks
 
