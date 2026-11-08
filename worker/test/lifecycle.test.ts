@@ -1,6 +1,7 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { isoUtc } from "../src/core/format.ts";
+import { storeCountsStatement } from "../src/health.ts";
 import { LEASE_MS, MAX_ATTEMPTS } from "../src/reminders.ts";
 import { NOW, TARGET_KEY, getReminder, mockFetch, resetDb, seedReminder } from "./helpers.ts";
 
@@ -50,6 +51,7 @@ it("tick -> claim -> failed ack -> reclaim -> sent ack, with a lost sender in be
   });
   expect(await fresh.json()).toEqual({ applied: 1 });
 
+  await storeCountsStatement(env.DB, Date.now()).run();
   const health = await (await exports.default.fetch("https://w.test/health")).json();
   expect(health).toMatchObject({ queued: 0, claimed: 0 });
   expect(await getReminder(TARGET_KEY)).toMatchObject({ status: "sent", message_id: "WAMID.OK" });
@@ -71,6 +73,7 @@ it("a reminder whose sender never acks ends failed after the last attempt", asyn
   };
   expect(none.items).toEqual([]);
   expect(await getReminder("unacked")).toMatchObject({ status: "failed", attempts: MAX_ATTEMPTS });
+  await storeCountsStatement(env.DB, Date.now()).run();
   const health = await (await exports.default.fetch("https://w.test/health")).json();
   expect(health).toMatchObject({ failed24h: 1, queued: 0, claimed: 0 });
 });

@@ -12,27 +12,24 @@ export const MAX_ATTEMPTS = 3;
 export const MAX_CLAIM = 5;
 
 const ELIGIBLE =
-  "deadline_utc >= ?1 AND attempts < ?3 AND (status = 'queued' OR (status = 'claimed' AND claimed_at <= ?2))";
+  "status IN ('queued', 'claimed') AND deadline_utc >= ?1 AND attempts < ?3 AND (status = 'queued' OR claimed_at <= ?2)";
+
+export const PENDING_SQL = `SELECT 1 AS pending FROM reminders WHERE ${ELIGIBLE} LIMIT 1`;
+
+export const SWEEP_SQL = [
+  "UPDATE reminders SET status = 'expired', updated_at = ?1 WHERE status = 'queued' AND deadline_utc < ?1",
+  "UPDATE reminders SET status = 'expired', updated_at = ?1 WHERE status = 'claimed' AND claimed_at <= ?2 AND deadline_utc < ?1",
+  "UPDATE reminders SET status = 'failed', last_error = 'lease expired after max attempts', updated_at = ?1 " +
+    "WHERE status = 'claimed' AND claimed_at <= ?2 AND attempts >= ?3",
+] as const;
 
 export function sweepStatements(db: D1Database, nowMs: number): D1PreparedStatement[] {
   const now = isoUtc(nowMs);
   const leaseCut = isoUtc(nowMs - LEASE_MS);
   return [
-    db
-      .prepare("UPDATE reminders SET status = 'expired', updated_at = ?1 WHERE status = 'queued' AND deadline_utc < ?1")
-      .bind(now),
-    db
-      .prepare(
-        "UPDATE reminders SET status = 'expired', updated_at = ?1 " +
-          "WHERE status = 'claimed' AND claimed_at <= ?2 AND deadline_utc < ?1",
-      )
-      .bind(now, leaseCut),
-    db
-      .prepare(
-        "UPDATE reminders SET status = 'failed', last_error = 'lease expired after max attempts', updated_at = ?1 " +
-          "WHERE status = 'claimed' AND claimed_at <= ?2 AND attempts >= ?3",
-      )
-      .bind(now, leaseCut, MAX_ATTEMPTS),
+    db.prepare(SWEEP_SQL[0]).bind(now),
+    db.prepare(SWEEP_SQL[1]).bind(now, leaseCut),
+    db.prepare(SWEEP_SQL[2]).bind(now, leaseCut, MAX_ATTEMPTS),
   ];
 }
 
@@ -112,7 +109,7 @@ export async function ackReminders(env: Env, claimId: string, results: AckResult
 
 export async function hasPendingReminders(env: Env, nowMs: number): Promise<boolean> {
   const row = await env.DB
-    .prepare(`SELECT 1 AS pending FROM reminders WHERE ${ELIGIBLE} LIMIT 1`)
+    .prepare(PENDING_SQL)
     .bind(isoUtc(nowMs), isoUtc(nowMs - LEASE_MS), MAX_ATTEMPTS)
     .first();
   return row !== null;

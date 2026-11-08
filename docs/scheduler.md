@@ -15,11 +15,11 @@ The Worker in `worker/` fetches contests, queues reminders in D1, wakes the send
 | `src/reminders.ts` | Claim, acknowledgement, lease and expiry SQL. |
 | `src/wake.ts` | `workflow_dispatch` of `send.yml`, debounced. |
 | `src/outbox.ts`, `src/admin.ts` | Request validation and handlers for the outbox and admin routes. |
-| `src/health.ts`, `src/badge.ts` | Health values and the public `/health` and `/badge` routes. |
+| `src/health.ts`, `src/badge.ts` | The reminder counts each tick stores in `meta`, and the public `/health` and `/badge` routes, which read only `meta`. |
 | `src/tips.ts`, `src/preview.ts` | One-off tips from D1, keeping only valid ones; the preview text. |
 | `src/config.ts` | `config/rules.json` and `config/tips.json`, bundled at deploy. |
 | `scripts/render-contract.ts` | Writes `testdata/reminders.json`, the formatter's output that the sender's tests check ([shared test data](reminder-format.md#shared-test-data)). |
-| `migrations/0001_init.sql` | D1 schema. |
+| `migrations/` | D1 schema and indexes, applied in order (`0001_init.sql`, `0002_reminders_by_status_updated.sql`). |
 
 `POST /tick` and the `*/5 * * * *` cron trigger run the same `runTick` ([tick flow](architecture.md#tick-workers-cron-every-5-minutes), [reminder lifecycle](architecture.md#reminder-lifecycle)).
 

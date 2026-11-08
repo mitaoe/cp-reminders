@@ -2,6 +2,7 @@ import { env, exports } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isoUtc } from "../src/core/format.ts";
 import { httpFailure } from "../src/errors.ts";
+import { storeCountsStatement } from "../src/health.ts";
 import { setMeta } from "../src/meta.ts";
 import { MIN, NOW, mockFetch, resetDb, seedReminder } from "./helpers.ts";
 
@@ -17,6 +18,8 @@ afterEach(() => {
 });
 
 const health = () => exports.default.fetch("https://w.test/health");
+const tick = () => exports.default.fetch("https://w.test/tick", { method: "POST", headers: { Authorization: `Bearer ${env.TICK_TOKEN}` } });
+const storeCounts = () => storeCountsStatement(env.DB, NOW).run();
 
 describe("GET /health", () => {
   it("is public and reports nulls and zeroes on a fresh database", async () => {
@@ -51,13 +54,35 @@ describe("GET /health", () => {
     await seedReminder({ key: "f-old", status: "failed", updated_at: isoUtc(NOW - 25 * 60 * MIN) });
     await seedReminder({ key: "e-new", status: "expired", updated_at: isoUtc(NOW - 60 * MIN) });
     await seedReminder({ key: "e-old", status: "expired", updated_at: isoUtc(NOW - 48 * 60 * MIN) });
+    await storeCounts();
     expect(await (await health()).json()).toMatchObject({ queued: 2, claimed: 1, failed24h: 1, expired24h: 1 });
+  });
+
+  it("reports the counts stored by the last count, not the current table", async () => {
+    await seedReminder({ key: "q1" });
+    await storeCounts();
+    await seedReminder({ key: "q2" });
+    await seedReminder({ key: "f", status: "failed" });
+    expect(await (await health()).json()).toMatchObject({ queued: 1, failed24h: 0 });
+  });
+
+  it("is updated by every tick, together with the tick time", async () => {
+    await seedReminder({ key: "f", status: "failed" });
+    const mock = mockFetch();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => mock.fetcher(String(input), init));
+    await tick();
+    expect(await (await health()).json()).toMatchObject({ lastTickAt: isoUtc(NOW), queued: 1, failed24h: 1 });
+  });
+
+  it("treats an unreadable stored count as zero", async () => {
+    await setMeta(env.DB, "reminder_counts", "not json").run();
+    expect(await (await health()).json()).toMatchObject({ queued: 0, claimed: 0, failed24h: 0, expired24h: 0 });
   });
 
   it("reflects the last tick and fetch recorded by the scheduler", async () => {
     const mock = mockFetch({ clist: () => new Response("x", { status: 500 }) });
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => mock.fetcher(String(input), init));
-    await exports.default.fetch("https://w.test/tick", { method: "POST", headers: { Authorization: `Bearer ${env.TICK_TOKEN}` } });
+    await tick();
     expect(await (await health()).json()).toMatchObject({
       lastTickAt: isoUtc(NOW),
       lastFetchAt: null,
@@ -69,7 +94,7 @@ describe("GET /health", () => {
     await seedReminder({ key: "q" });
     const mock = mockFetch({ github: () => new Response("Bad credentials", { status: 401 }) });
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => mock.fetcher(String(input), init));
-    await exports.default.fetch("https://w.test/tick", { method: "POST", headers: { Authorization: `Bearer ${env.TICK_TOKEN}` } });
+    await tick();
     const raw = await (await health()).text();
     expect(JSON.parse(raw)).toMatchObject({ lastWakeError: httpFailure(401) });
     expect(raw).not.toContain("Bad credentials");
@@ -77,6 +102,7 @@ describe("GET /health", () => {
 
   it("exposes only the documented counters, never message text, links or secrets", async () => {
     await seedReminder({ key: "k", text: "TOP SECRET MESSAGE BODY", href: "https://private.test/contest", status: "failed", last_error: "boom detail" });
+    await storeCounts();
     const raw = await (await health()).text();
     expect(Object.keys(JSON.parse(raw)).sort()).toEqual(
       ["claimed", "expired24h", "failed24h", "lastFetchAt", "lastFetchError", "lastFetchSource", "lastTickAt", "lastWakeError", "queued", "unlinkedContests"],

@@ -4,6 +4,7 @@ import { rules, tipRules } from "./config.ts";
 import { ensureSnapshot } from "./contests.ts";
 import type { Fetcher } from "./env.ts";
 import { NO_CONTEST_LINK } from "./errors.ts";
+import { storeCountsStatement } from "./health.ts";
 import { setMeta } from "./meta.ts";
 import { sweepStatements } from "./reminders.ts";
 import { loadOverrides } from "./tips.ts";
@@ -69,6 +70,7 @@ export async function runTick(env: Env, nowMs: number, fetcher: Fetcher): Promis
   const outcomes = await env.DB.batch([
     ...sweeps,
     ...due.map((c, i) => insertStatement(env.DB, c, rows[i]!, nowMs)),
+    storeCountsStatement(env.DB, nowMs),
     setMeta(env.DB, "last_tick_at", isoUtc(nowMs)),
   ]);
   const inserted = rows.filter((_, i) => outcomes[sweeps.length + i]!.meta.changes > 0);

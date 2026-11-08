@@ -2,6 +2,7 @@ import { env, exports } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BADGE_COLOR, CACHE_CONTROL, DOWN_AFTER_MS, LABEL_COLOR } from "../src/badge.ts";
 import { isoUtc } from "../src/core/format.ts";
+import { storeCountsStatement } from "../src/health.ts";
 import { setMeta } from "../src/meta.ts";
 import { MIN, NOW, resetDb, seedReminder } from "./helpers.ts";
 
@@ -20,6 +21,11 @@ afterEach(() => {
 const badge = () => exports.default.fetch("https://w.test/badge");
 const meta = (key: string, value: string) => setMeta(env.DB, key, value).run();
 const tickedMinutesAgo = (minutes: number) => meta("last_tick_at", isoUtc(NOW - minutes * MIN));
+
+async function seedCounted(row: Parameters<typeof seedReminder>[0]) {
+  await seedReminder(row);
+  await storeCountsStatement(env.DB, NOW).run();
+}
 
 async function expectBadge(message: string, color: string) {
   expect(await (await badge()).json()).toEqual({ schemaVersion: 1, label: "bot", labelColor: LABEL_COLOR, message, color });
@@ -61,15 +67,15 @@ describe("GET /badge", () => {
 
   it("is failing when reminders failed or expired in the last 24 hours", async () => {
     await tickedMinutesAgo(RECENT_MINUTES);
-    await seedReminder({ key: "f", status: "failed", updated_at: isoUtc(NOW - 60 * MIN) });
-    await seedReminder({ key: "e", status: "expired", updated_at: isoUtc(NOW - 23 * 60 * MIN) });
-    await seedReminder({ key: "old", status: "failed", updated_at: isoUtc(NOW - 25 * 60 * MIN) });
+    await seedCounted({ key: "f", status: "failed", updated_at: isoUtc(NOW - 60 * MIN) });
+    await seedCounted({ key: "e", status: "expired", updated_at: isoUtc(NOW - 23 * 60 * MIN) });
+    await seedCounted({ key: "old", status: "failed", updated_at: isoUtc(NOW - 25 * 60 * MIN) });
     await expectBadge("2 missed in 24h", BADGE_COLOR.failing);
   });
 
   it("reports down before failing", async () => {
     await tickedMinutesAgo(2 * DOWN_MINUTES);
-    await seedReminder({ key: "f", status: "failed" });
+    await seedCounted({ key: "f", status: "failed" });
     await expectBadge(`no tick for ${2 * DOWN_MINUTES}m`, BADGE_COLOR.failing);
   });
 
@@ -88,7 +94,7 @@ describe("GET /badge", () => {
   it("reports dispatch failing before missed reminders", async () => {
     await tickedMinutesAgo(RECENT_MINUTES);
     await meta("last_wake_error", "workflow dispatch HTTP 401");
-    await seedReminder({ key: "e", status: "expired" });
+    await seedCounted({ key: "e", status: "expired" });
     await expectBadge("dispatch failing", BADGE_COLOR.failing);
   });
 
@@ -114,14 +120,14 @@ describe("GET /badge", () => {
   it("reports failing before a missing contest link", async () => {
     await tickedMinutesAgo(RECENT_MINUTES);
     await meta("unlinked_contests", "1");
-    await seedReminder({ key: "f", status: "failed", last_error: "no_contest_link" });
+    await seedCounted({ key: "f", status: "failed", last_error: "no_contest_link" });
     await expectBadge("1 missed in 24h", BADGE_COLOR.failing);
   });
 
   it("reports failing before degraded", async () => {
     await tickedMinutesAgo(RECENT_MINUTES);
     await meta("last_fetch_error", "clist HTTP 500");
-    await seedReminder({ key: "e", status: "expired" });
+    await seedCounted({ key: "e", status: "expired" });
     await expectBadge("1 missed in 24h", BADGE_COLOR.failing);
   });
 
@@ -129,7 +135,7 @@ describe("GET /badge", () => {
     await tickedMinutesAgo(RECENT_MINUTES);
     await meta("last_fetch_error", "clist HTTP 500 boom detail");
     await meta("last_wake_error", "dispatch wake detail");
-    await seedReminder({ key: "k", text: "TOP SECRET MESSAGE BODY", href: "https://private.test/contest", status: "failed", last_error: "send detail" });
+    await seedCounted({ key: "k", text: "TOP SECRET MESSAGE BODY", href: "https://private.test/contest", status: "failed", last_error: "send detail" });
     const raw = await (await badge()).text();
     for (const leaked of ["TOP SECRET", "private.test", "boom detail", "wake detail", "send detail", env.TICK_TOKEN, env.SENDER_TOKEN, env.ADMIN_TOKEN, env.GH_TOKEN, env.CLIST_API_KEY]) {
       expect(raw).not.toContain(leaked);

@@ -42,7 +42,7 @@ export const badgeRoute: Route = {
       schemaVersion: 1,
       label: "bot",
       labelColor: LABEL_COLOR,
-      ...status(await readHealth(env.DB, now), now),
+      ...status(await readHealth(env.DB), now),
     };
     return json(badge, 200, CACHE_CONTROL);
   },

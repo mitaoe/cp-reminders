@@ -44,7 +44,7 @@ The bot posts a reminder for each selected programming contest into the Announce
 | A failed send is retried by later runs, up to 3 claims per reminder and until its deadline, then reported; there is no paid fallback. | Most failures (a slow connection, a dropped run) clear on the next run. | When the session is logged out, every reminder misses until the number is paired again; the failure email carries each text to post by hand. |
 | The bot covers contests on Codeforces, CodeChef, LeetCode and AtCoder only. Other events (college contests, hackathons, other platforms) are posted by hand. | Those events are one-offs with registration details that differ each time; the community posted a handful in 15 months. | Someone has to post them; they do not appear in `/preview`. |
 | The code is public in `mitaoe/cp-reminders`, where anyone can propose changes. Its `main` changes only through pull requests whose CI checks pass; force pushes and deletion of `main` are blocked, and `.github/CODEOWNERS` requests a review from @adityakotkar47 on every pull request opened by another account, except while it is a draft. The bot runs from a fork, the deployment repository, which alone holds its secrets and branch `state`. A release is a Sync fork of the deployment repository after @adityakotkar47 checks the compare view between the fork's `main` and `mitaoe/cp-reminders` `main` ([README](../README.md#where-it-runs)). | Contributions are reviewed before they can run anywhere with a secret: anyone with write access to a repository can run its workflows from their own branch, and a workflow can read every secret of its repository, so no secret is stored in the repository people contribute to. The sender redacts WhatsApp IDs, in the forms whatsmeow and libsignal write them, from its logs and from the errors in its job summary ([sender.md](sender.md#public-output)), and GitHub masks secrets in logs. | Every workflow on the fork can read the bot's secrets. `deploy.yml` runs pnpm, Wrangler and the locked dependencies with the Cloudflare token, applies `worker/migrations` to the production D1 database and deploys a Worker that holds its own secrets, so the check before a release covers every changed file. Sync fork brings over whatever is on `mitaoe/cp-reminders` `main` at that moment. GitHub never requests a review from a pull request's own author, and no approval is required, so @adityakotkar47 merges his own pull requests once CI passes. Every version of `session.db.age` that branch `state` ever held stays downloadable by commit ID, from the fork and through `mitaoe/cp-reminders`, since forks share git objects, and the `state` artifact that a send run uploads when it changed the state holds the same file, is kept for one day and can be downloaded by any signed-in GitHub user. Each copy is encrypted to `AGE_IDENTITY` and unreadable without it, and holds the keys of the linked device it belongs to; `AGE_IDENTITY` is rotated by pairing a new device with a new key and logging out the old one, which makes the old copies useless. |
-| The Worker serves its API on its public `workers.dev` address, without a rate limit, and answers `/health` and `/badge` without a token. | No custom domain or paid plan is needed; every route that changes anything requires a token. | Anyone can send requests to that address and use up a daily free quota, after which reminders fail until 00:00 UTC. The cheaper way is D1: each `/health` and `/badge` request reads the whole `reminders` table, and D1 Free allows 5 million rows read a day [2], so the number of requests needed is 5 million divided by the table's size, a few thousand once it holds a year of reminders; from then on the Worker's queries fail, and with them ticks and claims. The other way is the Workers Free limit of 100,000 requests a day per Cloudflare account, shared with every other Worker on the account; beyond it requests fail with error 1027, and whether cron triggers still run then is not documented. While it lasts the badge and `/health` fail too; after recovery, contests whose window passed meanwhile leave no trace. A custom domain with a Cloudflare WAF rate-limiting rule helps only with `workers_dev: false` and `preview_urls: false` in `wrangler.jsonc` (preview URLs default to the value of `workers_dev`) and the badge URL and `WORKER_URL` moved to that domain. |
+| The Worker serves its API on its public `workers.dev` address, without a rate limit, and answers `/health` and `/badge` without a token. | No custom domain or paid plan is needed; every route that changes anything requires a token. | Anyone can send requests to that address and use up a daily free quota, after which reminders fail until 00:00 UTC. `/health` and `/badge` read only the `meta` table, about ten rows, so reaching D1's 5 million rows read a day [2] through them takes far more requests than the Workers Free limit allows; that limit, 100,000 requests a day per Cloudflare account, shared with every other Worker on the account, is the one an attacker can reach. Beyond it requests fail with error 1027, and whether cron triggers still run then is not documented. While it lasts the badge and `/health` fail too; after recovery, contests whose window passed meanwhile leave no trace. A custom domain with a Cloudflare WAF rate-limiting rule helps only with `workers_dev: false` and `preview_urls: false` in `wrangler.jsonc` (preview URLs default to the value of `workers_dev`) and the badge URL and `WORKER_URL` moved to that domain. |
 | The sender authenticates to the Worker with `SENDER_TOKEN` alone, and the Worker trusts its acknowledgements. | The token exists only as a Worker secret and a secret of the deployment repository, where every workflow is already trusted with the bot's other secrets. | Whoever holds `SENDER_TOKEN` can claim reminders and acknowledge them as `sent` without posting them; those reminders are missed and the badge stays green. |
 
 ## Components
@@ -92,16 +92,18 @@ All timestamps are stored in UTC as ISO 8601 with `Z`. IST appears only in the r
 
 ### D1 tables
 
-Schema: [`worker/migrations/0001_init.sql`](../worker/migrations/0001_init.sql).
+Schema: the migrations in [`worker/migrations/`](../worker/migrations/), applied in order.
 
 | Table | Role | Shape |
 |---|---|---|
 | `contest_snapshot` | Cache of upcoming contests | One row, replaced as a whole on each refresh. `payload` is the normalised `Contest[]` JSON. |
 | `reminders` | Outbox and audit log | One row per reminder, created when it becomes due and kept indefinitely (about 1,000 rows a year). The source of truth for "already handled". |
 | `tip_overrides` | One-off tips | Set at runtime without a redeploy; they take precedence over the overrides in `worker/config/tips.json`. A stored tip that is not valid free text is ignored when tips are loaded, and the Worker logs it. |
-| `meta` | Operational facts | The outcome of each tick step: `last_tick_at`; `last_fetch_at`, `last_fetch_source`, `last_fetch_error`, `unlinked_contests`; `last_wake_at`, `last_wake_error`. An error key is set when its step fails and removed when the step next succeeds. It holds only a code (see [Error codes](#error-codes)), never upstream text. `unlinked_contests` is the number of selected contests in the latest snapshot whose deadline is still ahead and that have no contest link; it is set at each refresh and removed when the number is 0. |
+| `meta` | Operational facts | The outcome of each tick step: `last_tick_at`; `last_fetch_at`, `last_fetch_source`, `last_fetch_error`, `unlinked_contests`; `last_wake_at`, `last_wake_error`. An error key is set when its step fails and removed when the step next succeeds. It holds only a code (see [Error codes](#error-codes)), never upstream text. `unlinked_contests` is the number of selected contests in the latest snapshot whose deadline is still ahead and that have no contest link; it is set at each refresh and removed when the number is 0. `reminder_counts` holds the reminder counts that `/health` and the badge show, as JSON `{queued, claimed, failed24h, expired24h}`; each tick writes it in the same transaction as `last_tick_at`. |
 
 A reminder's `deadline_utc` is its start minus `minLeadMinutes` (10). After the deadline it is not worth sending.
+
+`reminders` grows by every reminder ever queued, so no query that runs on every tick or for a public request scans it. Two indexes serve them: `reminders_by_status (status, deadline_utc)` for the pending check, the claim and the sweep, and `reminders_by_status_updated (status, updated_at)` for the counts of failed and expired reminders in the last 24 hours. Each such query reads only the rows it counts or changes, and `worker/test/query-plans.test.ts` checks the query plans.
 
 ### Reminder lifecycle
 
@@ -191,7 +193,7 @@ Bodies are JSON. Authentication is `Authorization: Bearer <token>`.
 
 | Route | Auth | Behaviour |
 |---|---|---|
-| `GET /health` | none | `{lastTickAt, lastFetchAt, lastFetchSource, lastFetchError, lastWakeError, queued, claimed, failed24h, expired24h, unlinkedContests}`. The two errors are codes ([Error codes](#error-codes)); `unlinkedContests` is `unlinked_contests`, or 0. Contains no secrets, no message text and no upstream response text. |
+| `GET /health` | none | `{lastTickAt, lastFetchAt, lastFetchSource, lastFetchError, lastWakeError, queued, claimed, failed24h, expired24h, unlinkedContests}`. The two errors are codes ([Error codes](#error-codes)); `unlinkedContests` is `unlinked_contests`, or 0. `queued`, `claimed`, `failed24h` and `expired24h` are the counts stored in `reminder_counts` by the tick at `lastTickAt`. The request reads only the `meta` table. Contains no secrets, no message text and no upstream response text. |
 | `GET /badge` | none | The health as a [shields.io endpoint badge](https://shields.io/badges/endpoint-badge) (see [Status badge](#status-badge)). |
 | `POST /tick` | `TICK_TOKEN` | Runs one tick and returns `{fetched, queued, woke, errors}`. |
 | `GET /preview` | `ADMIN_TOKEN` | The next 10 reminders with their send time in IST and rendered text; a contest without a contest link is shown as a reminder that will be recorded as failed. |
@@ -212,6 +214,8 @@ Bodies are JSON. Authentication is `Authorization: Bearer <token>`.
 | unlinked contest | `unlinkedContests > 0` | `degraded: contest link` | `dbab09` (yellow) |
 | degraded | `lastFetchError` is set | `degraded: clist` | `dbab09` (yellow) |
 | healthy | otherwise | `ok` | `29c64d` (green) |
+
+The counts behind `failing` are those of the last tick, so while ticks run they are at most 5 minutes old; when ticks stop, the badge turns `down` after 15 minutes, which takes precedence over the counts.
 
 A contest without a contest link comes before a failing clist: it is a certain miss once that contest is due, and only a change to the formatter prevents it, while a clist failure is covered by the Codeforces fallback and the last snapshot and usually clears by itself.
 
@@ -250,9 +254,11 @@ The README shows it through `https://img.shields.io/endpoint?url=<WORKER_URL>/ba
 ### Tick (Workers cron, every 5 minutes)
 
 1. If the contest snapshot is older than 60 minutes, fetch clist: every upcoming contest of the four platforms, up to 100, which covers everything announced, usually several weeks ahead. If clist fails or returns nothing, fetch the Codeforces API instead, which needs no key: its contests replace the Codeforces ones in the snapshot, and the other platforms' upcoming contests are kept. `last_fetch_error` records the clist failure even when the fallback succeeds. Each refresh also sets `unlinked_contests` to the number of selected contests in the new snapshot that have no contest link. If both fail, the existing snapshot stays.
-2. For every selected contest starting between 45 and 10 minutes from now whose key is not in the outbox yet, render the text and insert it as `queued` with `INSERT … ON CONFLICT(key) DO NOTHING`; a contest without a contest link is inserted the same way as `failed` with `no_contest_link` and no text.
-3. Mark `queued` and `claimed` rows past their deadline as `expired`.
-4. If rows are waiting (`queued`, or `claimed` with an expired lease) and the last wake was more than 4 minutes ago, dispatch `send.yml`. A 2xx response records `last_wake_at` and removes `last_wake_error`; any other outcome records `last_wake_error`.
+2. In one transaction:
+   - mark `queued` and `claimed` rows past their deadline as `expired`, and fail `claimed` rows whose lease ran out after the last attempt;
+   - for every selected contest starting between 45 and 10 minutes from now whose key is not in the outbox yet, render the text and insert it as `queued` with `INSERT … ON CONFLICT(key) DO NOTHING`; a contest without a contest link is inserted the same way as `failed` with `no_contest_link` and no text;
+   - count the reminders that are `queued`, `claimed`, and `failed` or `expired` in the last 24 hours, store the counts in `reminder_counts`, and record `last_tick_at`.
+3. If rows are waiting (`queued`, or `claimed` with an expired lease) and the last wake was more than 4 minutes ago, dispatch `send.yml`. A 2xx response records `last_wake_at` and removes `last_wake_error`; any other outcome records `last_wake_error`.
 
 The two intervals do different jobs. The snapshot is refreshed hourly because contest schedules change rarely and clist asks for caching. The tick runs every 5 minutes because it decides when a reminder goes out: a reminder is queued at most 5 minutes after it becomes due, and checking the snapshot costs one query.
 
@@ -310,7 +316,7 @@ sequenceDiagram
 | Miss | Badge and `/health` | Email from GitHub | Text to post by hand |
 |---|---|---|---|
 | A send run fails while sending (send error, logged out, daily limit) | Red once the row ends `failed` or `expired` | Yes, about the failed run | In the job summary |
-| The sender refuses a text | Red at once | Yes, about the failed run | Not shown: the text must not be posted |
+| The sender refuses a text | Red at the next tick | Yes, about the failed run | Not shown: the text must not be posted |
 | A send run fails to claim (`SENDER_TOKEN` differs, wrong `WORKER_URL`, the Worker answers with an error such as 1027 or 500) | Red once the rows expire | Yes, about the failed run | Not in the summary, since nothing was claimed |
 | A send run fails after acknowledging (the session cannot be released) or is stopped by its job timeout | As for the outcome of its rows | Yes, about the failed run | No job summary is written |
 | A reminder expires before any send run claims it (the sender is never woken, for example while dispatch fails) | Red (`dispatch failing` while dispatch fails, then `N missed in 24h`) for 24 hours | No | No; the Worker logs nothing for it |
@@ -318,7 +324,7 @@ sequenceDiagram
 | A contest's 45-to-10-minute window passes without a successful tick (the Worker is down or out of quota) | Red while ticks are missing; while the Worker is down or out of quota, a shields.io error badge instead | No | No row is created, so nothing records the miss after recovery |
 | A reminder is acknowledged as `sent` without being posted ([`SENDER_TOKEN`](#product-decisions-and-trade-offs) misused) | Green | No | No |
 
-The badge document is sent with `max-age=300`, and shields.io caches the image for up to 5 more minutes, so the badge can stay green for about 10 minutes after an outage begins.
+The badge's counts are those of the last tick, at most 5 minutes old. The badge document is sent with `max-age=300`, and shields.io caches the image for up to 5 more minutes, so a new miss can take up to about 15 minutes to turn the badge red, and the badge can stay green for about 10 minutes after an outage begins.
 
 ## Capacity
 
@@ -326,8 +332,8 @@ The badge document is sent with `max-age=300`, and shields.io caches the image f
 |---|---|---|
 | Worker requests | 288 cron ticks, plus sender and badge requests | 100,000 |
 | Worker CPU per tick | Parsing about 30 contests and rendering a few messages; fetches and SQL are I/O, not CPU | 10 ms |
-| D1 rows written | about 24 snapshot refreshes, a few reminder transitions, 288 tick timestamps | 100,000 |
-| D1 rows read | about 2,000 | 5,000,000 |
+| D1 rows written | about 24 snapshot refreshes, a few reminder transitions, 288 tick timestamps and stored counts | 100,000 |
+| D1 rows read | Each tick reads the `meta` table (about ten rows) and, through indexes, only the reminders it counts or changes: a few thousand a day, independent of how many reminders the table keeps. Each `/health` or `/badge` request reads the `meta` table only. | 5,000,000 |
 | clist requests | at most 24 | 10 a minute |
 | GitHub Actions | 1–4 send runs of under a minute each, plus a deploy per release | Unlimited minutes on standard runners for public repositories |
 
