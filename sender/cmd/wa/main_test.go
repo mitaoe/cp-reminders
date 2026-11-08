@@ -258,7 +258,7 @@ func (s *releasingSession) Release() error {
 }
 
 func TestDrainReleasesTheSessionAfterTheAck(t *testing.T) {
-	f := newFakeWorker(t, outbox.Item{Key: "k1", Text: "hi", StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"})
+	f := newFakeWorker(t, outbox.Item{Key: "k1", Text: testReminder("hi"), StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"})
 	d, _, err := newDrainer([]string{"--state", t.TempDir(), "--jitter", "0s"}, f.env(t, nil), io.Discard)
 	if err != nil {
 		t.Fatal(err)
@@ -278,7 +278,7 @@ func TestDrainReleasesTheSessionAfterTheAck(t *testing.T) {
 }
 
 func TestDrainReleasesTheSessionWhenTheRunFails(t *testing.T) {
-	f := newFakeWorker(t, outbox.Item{Key: "k1", Text: "hi", StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"})
+	f := newFakeWorker(t, outbox.Item{Key: "k1", Text: testReminder("hi"), StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"})
 	d, _, err := newDrainer([]string{"--state", t.TempDir(), "--jitter", "0s"}, f.env(t, nil), io.Discard)
 	if err != nil {
 		t.Fatal(err)
