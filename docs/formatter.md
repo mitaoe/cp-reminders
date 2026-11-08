@@ -70,12 +70,15 @@ Every other contest, including CodeChef Starters, Codeforces Div. 2 and combined
 
 One-off tips set through `PUT /tips` are stored in D1 and take precedence over both ([scheduler.md](scheduler.md)).
 
+Every tip, configured or one-off, is one line of at most 500 characters without a link or domain-like text: the sender refuses reminders with links to other hosts ([sender.md](sender.md#content-checks)), and a tip is no place for a link. `PUT /tips` rejects other tips, and a test checks those in `tips.json`.
+
 ## Tests
 
 `worker/test/core/format.test.ts` runs with the Worker tests against frozen data in `worker/test/fixtures/`: every reminder the community posted by hand from August 2025 to November 2026 (`history.json`), clist's contests for the same period (`clist-history.json`) and clist's upcoming contests (`clist-upcoming.json`).
 
 - **Golden tests** use the real `rules.json` on purpose: they fail when a configuration change would break the community's format or skip a contest the community posts. For every manual reminder of the four platforms, the bot's platform, contest name, timing, duration and link for the same contest must equal the manual post; the tip line is not compared, because the manual tips were written per post. Every manually posted contest must be selected. The exceptions are listed in the test with a reason each, and a test fails if a listed post stops differing: 32 manual slips (a contest that started 10 to 15 minutes after the posted time, a duration or contest number copied from another post, a wrong division label, a singular Codeforces link, a sponsor name kept, a double space or typo) and 4 posts the rules do not select (2 unrated rounds, skipped by decision, and 2 links that are not clist's).
 - **Template test.** The bot's text equals the community's latest post for the same contest byte for byte, apart from the tip line.
+- **Contract tests** with the sender: every reminder for the contests of the same period, rendered with the configured tips, passes the sender's content checks ([sender.md](sender.md#content-checks)), and every configured tip is one line without a link within the length limit.
 - **Rule tests** define their own rules and tips in the test, so they hold whatever the configuration says: include and exclude patterns, the duration limit, Div. 1 and Div. 2 merging, the due window, sponsored names, the reminder key, tip rules, tip pools and overrides.
 
 The Worker's other tests take every time and limit from the configuration and from the constants exported by its modules (lease, attempts, claim size, wake debounce, snapshot age, badge threshold, length limits), so changing any of them needs no test changes.

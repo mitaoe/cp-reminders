@@ -29,7 +29,7 @@ The routes and their contracts are in [architecture.md](architecture.md#worker-h
 - Tokens are accepted only in the `Authorization` header, never in the query string.
 - Authentication runs before the request body is read.
 - A known path with the wrong method answers 405; an unknown path answers 404.
-- `href` and `tip` are limited to 500 characters, `claimId` to 100, and an ack to 100 results.
+- `href` and `tip` are limited to 500 characters, `claimId` to 100, and an ack to 100 results. A `tip` must also be one line without a link or domain-like text ([formatter.md](formatter.md#tips)).
 - A one-off tip affects reminders queued after it is set; text already in the outbox does not change.
 
 ```sh
