@@ -1,3 +1,5 @@
+import { defuseLinks } from "./text.ts";
+
 export interface Contest {
   resource_id: number;
   event: string;
@@ -111,7 +113,7 @@ function pickTip(c: Contest, tips: readonly Tip[], overrides: TipOverrides = {})
   return tip?.texts.length ? tip.texts[fnv1a(c.href) % tip.texts.length] : undefined;
 }
 
-export const HEADER = "🚨 Contest Reminder 🚨";
+const HEADER = "🚨 Contest Reminder 🚨";
 
 export function formatReminder(c: Contest, tips: readonly Tip[] = [], overrides: TipOverrides = {}): string {
   const platform = PLATFORM[c.resource_id];
@@ -121,7 +123,7 @@ export function formatReminder(c: Contest, tips: readonly Tip[] = [], overrides:
     HEADER,
     "",
     `📍 Platform: ${platform}`,
-    `🏆 Contest Name: ${displayName(c)}`,
+    `🏆 Contest Name: ${defuseLinks(displayName(c))}`,
     `🕒 Timing: ${formatTime(h, m)}`,
     `⏳ Duration: ${formatDuration(c.duration)}`,
     `🔗 Contest Link: ${displayLink(c)}`,

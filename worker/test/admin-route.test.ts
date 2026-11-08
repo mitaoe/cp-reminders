@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_TIP_LENGTH } from "../src/core/tip.ts";
+import { MAX_TIP_LENGTH } from "../src/core/text.ts";
 import { baseOverrides, rules, tipRules } from "../src/config.ts";
 import { formatReminder, formatTime, isoUtc, istClock } from "../src/core/format.ts";
 import { PREVIEW_LIMIT } from "../src/preview.ts";
@@ -75,6 +75,9 @@ describe("PUT /tips", () => {
     ["tip with a link", { href: HREF, tip: "see https://example.com/x" }],
     ["tip with a link to an allowed host", { href: HREF, tip: "see https://codeforces.com/blog" }],
     ["tip with a bare domain", { href: HREF, tip: "join evil.com today" }],
+    ["tip with a phone number", { href: HREF, tip: "dm +91 98765 43210" }],
+    ["tip with an IP address", { href: HREF, tip: "203.0.113.5/x" }],
+    ["tip of only spaces", { href: HREF, tip: "   " }],
   ])("rejects %s with 400", async (_name, body) => {
     expect((await request("PUT", "/tips", body)).status).toBe(400);
     expect(await tipRow(HREF)).toBeNull();

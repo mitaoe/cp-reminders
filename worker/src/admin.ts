@@ -1,5 +1,5 @@
 import { isoUtc } from "./core/format.ts";
-import { MAX_TIP_LENGTH, isValidTip } from "./core/tip.ts";
+import { MAX_TIP_LENGTH, isValidTip } from "./core/text.ts";
 import { badRequest, isRecord, json, readJson, text } from "./http.ts";
 import { renderPreview } from "./preview.ts";
 import type { Route } from "./router.ts";
@@ -34,7 +34,7 @@ export const adminRoutes: Route[] = [
       if (href === undefined) return badRequest("href must be an http(s) URL");
       const { tip } = body;
       if (typeof tip !== "string" || !isValidTip(tip)) {
-        return badRequest(`tip must be one line of up to ${MAX_TIP_LENGTH} characters without links`);
+        return badRequest(`tip must be one line of up to ${MAX_TIP_LENGTH} characters without links, domains, IP addresses or phone numbers`);
       }
       await env.DB
         .prepare(

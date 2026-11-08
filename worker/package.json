@@ -9,7 +9,8 @@
     "typecheck": "pnpm run types && tsc --noEmit",
     "test": "pnpm run types && vitest run",
     "db:migrate:local": "wrangler d1 migrations apply cp-reminders --local",
-    "db:migrate:remote": "wrangler d1 migrations apply cp-reminders --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply cp-reminders --remote",
+    "contract": "node scripts/render-contract.ts"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.6.0",

@@ -132,6 +132,15 @@ describe("runTick: tips", () => {
     await runTick(env, NOW, fetcher);
     expect((await getReminder(TARGET_KEY))?.text).not.toContain("Tip");
   });
+
+  it("ignores a stored override that is not a valid tip", async () => {
+    await env.DB.prepare("INSERT INTO tip_overrides (href, tip, updated_at) VALUES (?1, 'join evil.com', ?2)")
+      .bind(link, isoUtc(NOW))
+      .run();
+    const { fetcher } = mockFetch();
+    await runTick(env, NOW, fetcher);
+    expect((await getReminder(TARGET_KEY))?.text).toBe(formatReminder(TARGET, tipRules, baseOverrides));
+  });
 });
 
 describe("runTick: housekeeping and wake", () => {

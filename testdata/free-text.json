@@ -1,0 +1,43 @@
+{
+  "safe": [
+    "never started cp? scared of cf?",
+    "e.g. read all problems first... then A.",
+    "Codeforces Round 1134 (Div. 4)",
+    "Educational Codeforces Round 190 (Rated for Div. 2)",
+    "ICPC 2025-2026 Mirror",
+    "Refact<U+2024>ai Match 1 (Codeforces Round 985)",
+    "aim for D today, upsolve E after",
+    "4 problems before breakfast, best way to start a sunday",
+    "100% of 3",
+    "8:05 PM",
+    "café au lait"
+  ],
+  "unsafe": [
+    "see https://codeforces.com/blog",
+    "ftp://files.example.org/x",
+    "join evil.com",
+    "JOIN EVIL.COM",
+    "chat.whatsapp.com/abc",
+    "evil.co.uk",
+    "evil<U+FF0E>com",
+    "evil<U+3002>com",
+    "evil<U+FF61>com",
+    "пример.рф",
+    "203.0.113.5/login",
+    "WhatsApp +91 98765 43210",
+    "call 98765-43210",
+    "(+91) 98765 43210",
+    "tel:+919876543210",
+    "a<U+000A>b",
+    "a<U+000D>b",
+    "a<U+000B>b",
+    "a<U+000C>b",
+    "a<U+0085>b",
+    "a<U+2028>b",
+    "a<U+2029>b",
+    "a<U+202E>b",
+    "a<U+2066>b",
+    "evil<U+200B>.com",
+    "a<U+0000>b"
+  ]
+}
