@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { baseOverrides, rules, tipRules } from "../src/config.ts";
 import { SNAPSHOT_TTL_MS } from "../src/contests.ts";
 import { formatReminder, isoUtc } from "../src/core/format.ts";
@@ -22,7 +22,14 @@ import {
   seedReminder,
 } from "./helpers.ts";
 
-beforeEach(resetDb);
+beforeEach(async () => {
+  await resetDb();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const count = async (where = "1 = 1") =>
   (await env.DB.prepare(`SELECT COUNT(*) AS n FROM reminders WHERE ${where}`).first<{ n: number }>())!.n;

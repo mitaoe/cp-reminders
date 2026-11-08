@@ -1,12 +1,21 @@
 import { env } from "cloudflare:workers";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SNAPSHOT_TTL_MS, ensureSnapshot } from "../src/contests.ts";
 import { isoUtc } from "../src/core/format.ts";
 import { FAILURE, httpFailure } from "../src/errors.ts";
 import { getMeta } from "../src/meta.ts";
 import { MIN, NOW, fixtureContests, jsonResponse, mockFetch, resetDb } from "./helpers.ts";
 
-beforeEach(resetDb);
+let consoleError: ReturnType<typeof vi.spyOn>;
+
+beforeEach(async () => {
+  await resetDb();
+  consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const snapshotRow = () =>
   env.DB.prepare("SELECT source, fetched_at, payload FROM contest_snapshot WHERE id = 1").first<{
@@ -85,6 +94,7 @@ describe("ensureSnapshot: Codeforces fallback", () => {
     expect(await getMeta(env.DB, "last_fetch_source")).toBe("codeforces");
     expect(await getMeta(env.DB, "last_fetch_error")).toBe(`clist: ${httpFailure(500)}`);
     expect(result.error).toContain("clist HTTP 500");
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("clist HTTP 500"));
   });
 
   it("falls back when clist returns an empty list", async () => {
@@ -112,6 +122,8 @@ describe("ensureSnapshot: Codeforces fallback", () => {
       },
       FAILURE.network,
     ],
+    ["a null body", () => jsonResponse(null), FAILURE.invalid],
+    ["objects that are not a list", () => jsonResponse({ objects: "none" }), FAILURE.invalid],
   ])("records only a code when clist fails with %s", async (_name, clist, code) => {
     const start = Math.floor((NOW + 60 * MIN) / 1000);
     const { fetcher } = mockFetch({ clist, codeforces: () => cfResponse(start) });
@@ -134,6 +146,23 @@ describe("ensureSnapshot: total failure", () => {
     expect(await snapshotRow()).toEqual(before);
     expect(await getMeta(env.DB, "last_fetch_error")).toBe(`clist: ${httpFailure(502)}; codeforces: ${httpFailure(503)}`);
     expect(result.error).toMatch(/clist HTTP 502.*codeforces HTTP 503/);
+  });
+
+  it.each([
+    ["a result that is not a list", () => jsonResponse({ status: "OK", result: "none" })],
+    ["a null body", () => jsonResponse(null)],
+  ])("records invalid response when Codeforces answers with %s", async (_name, codeforces) => {
+    const { fetcher } = mockFetch({ clist: () => new Response("x", { status: 500 }), codeforces });
+    await ensureSnapshot(env, NOW, fetcher);
+    expect(await getMeta(env.DB, "last_fetch_error")).toBe(`clist: ${httpFailure(500)}; codeforces: ${FAILURE.invalid}`);
+  });
+
+  it("lets a database failure propagate without falling back to Codeforces", async () => {
+    vi.spyOn(env.DB, "batch").mockRejectedValueOnce(new Error("D1 unavailable"));
+    const { fetcher, calls } = mockFetch();
+    await expect(ensureSnapshot(env, NOW, fetcher)).rejects.toThrow("D1 unavailable");
+    expect(calls.codeforces).toHaveLength(0);
+    expect(await getMeta(env.DB, "last_fetch_error")).toBeNull();
   });
 
   it("records invalid response when Codeforces reports a failure", async () => {

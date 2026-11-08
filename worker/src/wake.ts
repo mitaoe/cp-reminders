@@ -28,7 +28,7 @@ async function dispatch(env: Env, fetcher: Fetcher): Promise<void> {
   if (!res.ok) {
     throw new UpstreamError(
       httpFailure(res.status),
-      `workflow dispatch HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`,
+      `workflow dispatch HTTP ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`,
     );
   }
 }

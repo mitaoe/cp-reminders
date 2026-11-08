@@ -41,8 +41,9 @@ async function fetchClist(env: Env, nowMs: number, fetcher: Fetcher): Promise<Co
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) throw new UpstreamError(httpFailure(res.status), `clist HTTP ${res.status}`);
-  const body = (await res.json()) as { objects?: Contest[] };
-  const contests = (body.objects ?? []).map(({ resource_id, event, start, duration, href }) => ({
+  const body = (await res.json()) as { objects?: unknown } | null;
+  if (!Array.isArray(body?.objects)) throw new UpstreamError(FAILURE.invalid, "clist returned no contest list");
+  const contests = (body.objects as Contest[]).map(({ resource_id, event, start, duration, href }) => ({
     resource_id,
     event,
     start,
@@ -58,9 +59,9 @@ async function fetchCodeforces(fetcher: Fetcher): Promise<Contest[]> {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) throw new UpstreamError(httpFailure(res.status), `codeforces HTTP ${res.status}`);
-  const body = (await res.json()) as CodeforcesResponse;
-  if (body.status !== "OK" || !body.result) {
-    throw new UpstreamError(FAILURE.invalid, `codeforces: ${body.comment ?? body.status}`);
+  const body = (await res.json()) as CodeforcesResponse | null;
+  if (body?.status !== "OK" || !Array.isArray(body.result)) {
+    throw new UpstreamError(FAILURE.invalid, `codeforces: ${body?.comment ?? body?.status ?? "no contest list"}`);
   }
   const contests: Contest[] = [];
   for (const c of body.result) {
@@ -108,26 +109,22 @@ export async function ensureSnapshot(env: Env, nowMs: number, fetcher: Fetcher):
   const previous: Contest[] = row ? (JSON.parse(row.payload) as Contest[]) : [];
   if (row && nowMs - Date.parse(row.fetched_at) < SNAPSHOT_TTL_MS) return { contests: previous, fetched: false };
 
-  let clist: Failure;
-  try {
-    const contests = await fetchClist(env, nowMs, fetcher);
-    await saveSnapshot(env, nowMs, "clist", contests, null);
-    return { contests, fetched: true };
-  } catch (e) {
-    clist = failure("clist", e);
+  const clist = await attempt("clist", () => fetchClist(env, nowMs, fetcher));
+  if ("contests" in clist) {
+    await saveSnapshot(env, nowMs, "clist", clist.contests, null);
+    return { contests: clist.contests, fetched: true };
   }
 
-  try {
-    const codeforces = await fetchCodeforces(fetcher);
+  const codeforces = await attempt("codeforces", () => fetchCodeforces(fetcher));
+  if ("contests" in codeforces) {
     const others = previous.filter((c) => c.resource_id !== 1 && utcMs(c.start) > nowMs);
-    const contests = [...codeforces, ...others].sort(byStart);
-    await saveSnapshot(env, nowMs, "codeforces", contests, clist.code);
-    return { contests, fetched: true, error: clist.detail };
-  } catch (e) {
-    const codeforces = failure("codeforces", e);
-    await setMeta(env.DB, "last_fetch_error", `${clist.code}; ${codeforces.code}`).run();
-    return { contests: previous, fetched: false, error: `${clist.detail}; ${codeforces.detail}` };
+    const contests = [...codeforces.contests, ...others].sort(byStart);
+    await saveSnapshot(env, nowMs, "codeforces", contests, clist.failure.code);
+    return { contests, fetched: true, error: clist.failure.detail };
   }
+
+  await setMeta(env.DB, "last_fetch_error", `${clist.failure.code}; ${codeforces.failure.code}`).run();
+  return { contests: previous, fetched: false, error: `${clist.failure.detail}; ${codeforces.failure.detail}` };
 }
 
 interface Failure {
@@ -135,8 +132,14 @@ interface Failure {
   detail: string;
 }
 
-function failure(source: Source, e: unknown): Failure {
-  const detail = errorMessage(e);
-  console.error(`${source} fetch failed: ${detail}`);
-  return { code: `${source}: ${failureCode(e)}`, detail };
+type Attempt = { contests: Contest[] } | { failure: Failure };
+
+async function attempt(source: Source, fetch: () => Promise<Contest[]>): Promise<Attempt> {
+  try {
+    return { contests: await fetch() };
+  } catch (e) {
+    const detail = errorMessage(e);
+    console.error(`${source} fetch failed: ${detail}`);
+    return { failure: { code: `${source}: ${failureCode(e)}`, detail } };
+  }
 }

@@ -205,8 +205,8 @@ A tick that cannot start the sender turns the badge red at once, before any remi
 |---|---|
 | `HTTP <status>` | The upstream service answered with a status outside 2xx. |
 | `timeout` | The request did not finish within 8 seconds. |
-| `network error` | The request failed before an answer, or with any other error. |
-| `invalid response` | The body was not valid JSON, or Codeforces reported a failure. |
+| `network error` | The request got no answer, for example a failed connection or name lookup; also any failure not listed here. |
+| `invalid response` | The body was not valid JSON or had no contest list, or Codeforces reported a failure. |
 | `no contests` | clist or Codeforces returned no upcoming contests. |
 
 `last_fetch_error` names each source that failed, such as `clist: HTTP 502` or `clist: timeout; codeforces: HTTP 503`; `last_wake_error` is the code alone. The full error, including up to 200 characters of the response body for a failed dispatch, is written to the Worker's log, which Workers Logs keeps (`observability` in `wrangler.jsonc`) and `wrangler tail` streams, and is returned by `POST /tick`, which requires `TICK_TOKEN`.

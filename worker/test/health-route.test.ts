@@ -7,6 +7,7 @@ import { MIN, NOW, mockFetch, resetDb, seedReminder } from "./helpers.ts";
 beforeEach(async () => {
   await resetDb();
   vi.useFakeTimers({ toFake: ["Date"], now: NOW });
+  vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 afterEach(() => {
