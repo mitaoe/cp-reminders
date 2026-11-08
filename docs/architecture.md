@@ -185,15 +185,17 @@ Bodies are JSON. Authentication is `Authorization: Bearer <token>`.
 
 ### Status badge
 
-`GET /badge` returns `{schemaVersion: 1, label: "bot", message, color}` with `Cache-Control: max-age=300`. The states are ordered by what to fix first, and the first matching state wins:
+`GET /badge` returns `{schemaVersion: 1, label: "bot", labelColor: "24292e", message, color}` with `Cache-Control: max-age=300`. The colours are those of GitHub's workflow status badge, which the README shows next to it: a dark label, green for healthy, red for any failure and yellow for degraded. The states are ordered by what to fix first, and the first matching state wins:
 
 | State | Condition | `message` | `color` |
 |---|---|---|---|
-| down | no tick in the last 15 minutes, or no tick ever | `no tick for 23m` / `never ticked` | `red` |
-| sender unreachable | `lastWakeError` is set | `dispatch failing` | `red` |
-| failing | `failed24h + expired24h > 0` | `2 missed in 24h` | `red` |
-| degraded | `lastFetchError` is set | `degraded: clist` | `yellow` |
-| healthy | otherwise | `ok · tick 3m ago` | `brightgreen` |
+| down | no tick in the last 15 minutes, or no tick ever | `no tick for 23m` / `never ticked` | `cb2431` (red) |
+| sender unreachable | `lastWakeError` is set | `dispatch failing` | `cb2431` (red) |
+| failing | `failed24h + expired24h > 0` | `2 missed in 24h` | `cb2431` (red) |
+| degraded | `lastFetchError` is set | `degraded: clist` | `dbab09` (yellow) |
+| healthy | otherwise | `ok` | `28a745` (green) |
+
+The healthy message carries no time: the image is cached for up to 5 minutes by `max-age` and longer by GitHub's image proxy, and the badge cannot be green unless the last tick is under 15 minutes old.
 
 A tick that cannot start the sender turns the badge red at once, before any reminder is missed. It stays red until a dispatch succeeds, so a fault that outlasts its reminders stays visible. A single transient GitHub error clears on the next tick, which retries the dispatch. The badge carries no error; `/health` has its code.
 
