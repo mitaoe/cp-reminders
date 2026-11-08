@@ -185,17 +185,19 @@ Bodies are JSON. Authentication is `Authorization: Bearer <token>`.
 
 ### Status badge
 
-`GET /badge` returns `{schemaVersion: 1, label: "bot", labelColor: "24292e", message, color}` with `Cache-Control: max-age=300`. The colours are those of GitHub's workflow status badge, which the README shows next to it: a dark label, green for healthy, red for any failure and yellow for degraded. The states are ordered by what to fix first, and the first matching state wins:
+`GET /badge` returns `{schemaVersion: 1, label: "bot", labelColor: "2f373f", message, color}` with `Cache-Control: max-age=300`. The states are ordered by what to fix first, and the first matching state wins:
 
 | State | Condition | `message` | `color` |
 |---|---|---|---|
-| down | no tick in the last 15 minutes, or no tick ever | `no tick for 23m` / `never ticked` | `cb2431` (red) |
-| sender unreachable | `lastWakeError` is set | `dispatch failing` | `cb2431` (red) |
-| failing | `failed24h + expired24h > 0` | `2 missed in 24h` | `cb2431` (red) |
+| down | no readable tick time, or none in the last 15 minutes | `never ticked` / `no tick for 23m` | `de2a39` (red) |
+| sender unreachable | `lastWakeError` is set | `dispatch failing` | `de2a39` (red) |
+| failing | `failed24h + expired24h > 0` | `2 missed in 24h` | `de2a39` (red) |
 | degraded | `lastFetchError` is set | `degraded: clist` | `dbab09` (yellow) |
-| healthy | otherwise | `ok` | `28a745` (green) |
+| healthy | otherwise | `ok` | `29c64d` (green) |
 
-The healthy message carries no time: the image is cached for up to 5 minutes by `max-age` and longer by GitHub's image proxy, and the badge cannot be green unless the last tick is under 15 minutes old.
+The README shows the badge next to GitHub's workflow badge, so the label, green and red match it. GitHub draws vertical gradients (label `#444D56` to `#24292E`, passing `#34D058` to `#28A745`, failing `#D73A49` to `#CB2431`), while shields.io's flat style paints one colour under an overlay that adds 10% `#bbb` at the top and 10% black at the bottom. Each colour is chosen so that, under that overlay, it averages to the middle of GitHub's gradient. GitHub's workflow badge has no warning state; degraded uses Primer's yellow `dbab09`.
+
+The healthy message carries no time. The README image can be up to two cache periods old: the Worker sends `max-age=300`, and shields.io caches the rendered image for another 300 seconds (`max-age=300, s-maxage=300`). Green already means the last tick is at most 15 minutes old.
 
 A tick that cannot start the sender turns the badge red at once, before any reminder is missed. It stays red until a dispatch succeeds, so a fault that outlasts its reminders stays visible. A single transient GitHub error clears on the next tick, which retries the dispatch. The badge carries no error; `/health` has its code.
 
@@ -213,7 +215,7 @@ A tick that cannot start the sender turns the badge red at once, before any remi
 
 `last_fetch_error` names each source that failed, such as `clist: HTTP 502` or `clist: timeout; codeforces: HTTP 503`; `last_wake_error` is the code alone. The full error, including up to 200 characters of the response body for a failed dispatch, is written to the Worker's log, which Workers Logs keeps (`observability` in `wrangler.jsonc`) and `wrangler tail` streams, and is returned by `POST /tick`, which requires `TICK_TOKEN`.
 
-The README shows it through `https://img.shields.io/endpoint?url=<WORKER_URL>/badge&logo=cloudflare&logoColor=white` [9].
+The README shows it through `https://img.shields.io/endpoint?url=<WORKER_URL>/badge&logo=cloudflare&logoColor=959da5` [9], whose logo colour is the grey of GitHub's logo on its badge. The URL sets no `labelColor` or `color`, which would override the endpoint's.
 
 ### Workflow dispatch
 

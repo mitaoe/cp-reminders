@@ -1,7 +1,7 @@
 # cp-reminders
 
 [![CI](https://github.com/mitaoe/cp-reminders/actions/workflows/ci.yml/badge.svg)](https://github.com/mitaoe/cp-reminders/actions/workflows/ci.yml)
-[![bot](https://img.shields.io/endpoint?url=https%3A%2F%2Fcp-reminders.c122.workers.dev%2Fbadge&logo=cloudflare&logoColor=white)](https://cp-reminders.c122.workers.dev/health)
+[![bot](https://img.shields.io/endpoint?url=https%3A%2F%2Fcp-reminders.c122.workers.dev%2Fbadge&logo=cloudflare&logoColor=959da5)](https://cp-reminders.c122.workers.dev/health)
 
 Posts a reminder for every Codeforces, CodeChef, LeetCode and AtCoder contest into the Announcements group of the CP community's WhatsApp Community, 45 minutes before it starts.
 

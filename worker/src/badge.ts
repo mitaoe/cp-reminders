@@ -6,8 +6,8 @@ const MIN_MS = 60_000;
 export const DOWN_AFTER_MS = 15 * MIN_MS;
 export const CACHE_CONTROL = "max-age=300";
 
-export const LABEL_COLOR = "24292e";
-export const BADGE_COLOR = { ok: "28a745", failing: "cb2431", degraded: "dbab09" } as const;
+export const LABEL_COLOR = "2f373f";
+export const BADGE_COLOR = { ok: "29c64d", failing: "de2a39", degraded: "dbab09" } as const;
 
 type BadgeColor = (typeof BADGE_COLOR)[keyof typeof BADGE_COLOR];
 
@@ -20,8 +20,9 @@ interface Badge {
 }
 
 function status(health: Health, nowMs: number): Pick<Badge, "message" | "color"> {
-  if (health.lastTickAt === null) return { message: "never ticked", color: BADGE_COLOR.failing };
-  const sinceTick = nowMs - Date.parse(health.lastTickAt);
+  const lastTickMs = health.lastTickAt === null ? Number.NaN : Date.parse(health.lastTickAt);
+  if (Number.isNaN(lastTickMs)) return { message: "never ticked", color: BADGE_COLOR.failing };
+  const sinceTick = nowMs - lastTickMs;
   if (sinceTick > DOWN_AFTER_MS) {
     return { message: `no tick for ${Math.floor(sinceTick / MIN_MS)}m`, color: BADGE_COLOR.failing };
   }
