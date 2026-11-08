@@ -50,7 +50,7 @@ What `drain` hands to `persist` is untrusted: the artifact's contents and the ou
 1. **Download state** into `$RUNNER_TEMP/artifact`.
 2. **Push state branch.** Checks that `state-sha` is empty or a commit ID; creates a new repository in `$RUNNER_TEMP/repo` before reading the artifact; copies `session.db.age` and `sent.json` into it if they are regular files, and fails on a symlink, a directory or any other kind of file; commits them as a single commit by `github-actions[bot]`; and runs `git push --force-with-lease="refs/heads/state:$STATE_SHA" origin HEAD:refs/heads/state`. The allowlist keeps a plaintext `session.db` out of the repository, the single commit keeps the repository from growing, and the lease rejects the push if the branch moved since the fetch; an empty `state-sha` requires that the branch does not exist.
 
-If `persist` fails, its artifact is kept for a day: open the failed `persist` job and choose "Re-run this job", which reuses `drain`'s outputs and artifact. "Re-run all jobs" would run `drain` again with the session from before the run, whose keys have rotated since.
+If `persist` fails, its artifact is kept for a day: open the failed `persist` job and choose "Re-run this job", which reuses `drain`'s outputs and artifact. "Re-run failed jobs" or "Re-run all jobs" would run `drain` again, whenever it failed too, with the session from before the run, whose keys have rotated since.
 
 ## deploy.yml: deploy the Worker
 
