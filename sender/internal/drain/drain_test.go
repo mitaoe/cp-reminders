@@ -72,7 +72,7 @@ func (s *fakeSession) Group(ctx context.Context, jid string) (Group, error) {
 }
 
 func (s *fakeSession) SendText(ctx context.Context, jid, text string) (string, error) {
-	body := strings.TrimPrefix(text, Header+"\n\n")
+	body := contestName(text)
 	s.rec.add("send %s %s", jid, body)
 	if err := s.sendErr[body]; err != nil {
 		return "", err

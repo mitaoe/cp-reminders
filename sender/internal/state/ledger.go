@@ -11,26 +11,22 @@ import (
 	"time"
 )
 
-// Ledger file name and size.
 const (
 	LedgerFile       = "sent.json"
 	MaxLedgerEntries = 500
 )
 
-// Entry records one delivered reminder.
 type Entry struct {
 	Key       string    `json:"key"`
 	SentAt    time.Time `json:"sentAt"`
 	MessageID string    `json:"messageId"`
 }
 
-// Ledger is the sender's local record of delivered reminders (sent.json).
 type Ledger struct {
 	path    string
 	entries []Entry
 }
 
-// LoadLedger reads the ledger at path. A missing file is an empty ledger.
 func LoadLedger(path string) (*Ledger, error) {
 	l := &Ledger{path: path}
 	data, err := os.ReadFile(path)
@@ -46,7 +42,6 @@ func LoadLedger(path string) (*Ledger, error) {
 	return l, nil
 }
 
-// Lookup returns the entry recorded for key.
 func (l *Ledger) Lookup(key string) (Entry, bool) {
 	i := slices.IndexFunc(l.entries, func(e Entry) bool { return e.Key == key })
 	if i < 0 {
@@ -55,7 +50,6 @@ func (l *Ledger) Lookup(key string) (Entry, bool) {
 	return l.entries[i], true
 }
 
-// SentSince returns the number of entries sent after t.
 func (l *Ledger) SentSince(t time.Time) int {
 	n := 0
 	for _, e := range l.entries {
@@ -66,10 +60,8 @@ func (l *Ledger) SentSince(t time.Time) int {
 	return n
 }
 
-// Len returns the number of entries.
 func (l *Ledger) Len() int { return len(l.entries) }
 
-// Record appends e and persists the ledger. Keys already present are kept as is.
 func (l *Ledger) Record(e Entry) error {
 	if _, ok := l.Lookup(e.Key); ok {
 		return nil

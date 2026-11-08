@@ -21,8 +21,19 @@ import (
 
 	"cp-reminders/sender/internal/drain"
 	"cp-reminders/sender/internal/outbox"
+	"cp-reminders/sender/internal/reminder"
 	"cp-reminders/sender/internal/state"
 )
+
+func testReminder(name string) string {
+	return reminder.Reminder{
+		Platform: "Codeforces",
+		Name:     name,
+		Timing:   "8:05 PM",
+		Duration: "2:15 hours",
+		Link:     "https://codeforces.com/contests/1",
+	}.String()
+}
 
 func envMap(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
@@ -182,7 +193,7 @@ func TestDrainEmptyOutboxDoesNotTouchState(t *testing.T) {
 }
 
 func TestDrainWithoutSessionAcksFailedAndWritesSummary(t *testing.T) {
-	f := newFakeWorker(t, outbox.Item{Key: "k1", Text: drain.Header + "\n\nCodeforces Round starts in 75 min", StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"})
+	f := newFakeWorker(t, outbox.Item{Key: "k1", Text: testReminder("Codeforces Round starts in 75 min"), StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"})
 	summaryPath := filepath.Join(t.TempDir(), "summary.md")
 	env := f.env(t, map[string]string{envStepSummary: summaryPath})
 	err := run(context.Background(), []string{"drain", "--state", t.TempDir(), "--jitter", "0s"}, env, io.Discard)
@@ -216,7 +227,7 @@ func (s *groupOnlySession) SendText(_ context.Context, _, text string) (string, 
 func (s *groupOnlySession) Close() error { return nil }
 
 func TestDrainRefusesNonAnnouncementsTarget(t *testing.T) {
-	f := newFakeWorker(t, outbox.Item{Key: "k1", Text: drain.Header + "\n\nhi", StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"})
+	f := newFakeWorker(t, outbox.Item{Key: "k1", Text: testReminder("hi"), StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"})
 	d, _, err := newDrainer([]string{"--state", t.TempDir(), "--jitter", "0s"}, f.env(t, nil), io.Discard)
 	if err != nil {
 		t.Fatal(err)

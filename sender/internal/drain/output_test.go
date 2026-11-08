@@ -42,7 +42,9 @@ func TestTargetCheckLogsTheVerification(t *testing.T) {
 }
 
 func TestDryRunPrintsTextsUnchanged(t *testing.T) {
-	text := Header + "\n\nCall 9876543210 now"
+	r := reminderFor("Round")
+	r.Link = "https://codeforces.com/contests/9876543210"
+	text := r.String()
 	h := newHarness(rawItem("k1", text))
 	h.d.DryRun = true
 	if err := h.d.Run(context.Background()); err != nil {
