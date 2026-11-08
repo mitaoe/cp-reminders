@@ -20,7 +20,7 @@ Posts a reminder for every Codeforces, CodeChef, LeetCode and AtCoder contest in
 ## How it works
 
 - A **Cloudflare Worker** reads upcoming contests from [clist.by](https://clist.by) every hour, queues each reminder in D1 when it becomes due, and wakes the sender.
-- A **GitHub Actions** job runs the **Go sender**, a WhatsApp linked device on a dedicated number, which posts the queued reminders to the Announcements group and nowhere else.
+- A **GitHub Actions** job runs the **Go sender**, a WhatsApp linked device on a dedicated number, which posts the queued reminders to the Announcements group and nowhere else. It posts only texts in the agreed reminder format, at most 8 in any 24 hours.
 - Everything runs on free tiers. The badges above show the checks and the bot's live health: red after 15 minutes without a tick, when the sender cannot be started, or after a missed reminder; yellow when clist is failing and the Codeforces fallback is in use.
 
 ## Repository
@@ -30,6 +30,7 @@ Posts a reminder for every Codeforces, CodeChef, LeetCode and AtCoder contest in
 | `worker/` | Cloudflare Worker: scheduling, contest selection and formatting, outbox API, health and badge. |
 | `worker/config/` | Which contests get reminders, lead times and tips. |
 | `sender/` | Go WhatsApp sender. |
+| `testdata/` | Test data shared by the Worker and the sender: the rendered reminders and free-text examples ([reminder-format.md](docs/reminder-format.md#shared-test-data)). |
 | `.github/workflows/` | `send.yml` drains the outbox; `deploy.yml` deploys the Worker; `ci.yml` runs the checks. |
 | `docs/` | Design and operation. |
 | `docs/pfp/` | The sender's WhatsApp profile picture: `crewmates.svg` is the source, `crewmates.png` the 640×640 image set on the account. |
@@ -52,10 +53,11 @@ Branch `state` of the deployment repository holds the sender's WhatsApp login, e
 ## Documentation
 
 - [Architecture](docs/architecture.md): design, data model, interfaces and failure handling.
-- [Formatter](docs/formatter.md): message format, contest selection and tips.
+- [Reminder format](docs/reminder-format.md): the exact text the bot may post, shared by the formatter and the sender.
+- [Formatter](docs/formatter.md): how contests become reminders, contest selection and tips.
 - [Scheduler](docs/scheduler.md): the Worker, its API, deployment and development.
-- [Sender](docs/sender.md): commands, pairing and troubleshooting.
-- [Workflows](docs/workflow.md): `send.yml` and `ci.yml`.
+- [Sender](docs/sender.md): commands, content checks, pairing and troubleshooting.
+- [Workflows](docs/workflow.md): `send.yml`, `deploy.yml` and `ci.yml`.
 - [Research](docs/research/report.md): the findings behind the design.
 
 ## Operating
@@ -63,10 +65,11 @@ Branch `state` of the deployment repository holds the sender's WhatsApp login, e
 | Task | How |
 |---|---|
 | See upcoming reminders | `GET /preview` ([scheduler.md](docs/scheduler.md#http-api)) |
-| Add or suppress a tip for one contest | `PUT /tips` ([scheduler.md](docs/scheduler.md#http-api)) |
+| Add or suppress a tip for one contest | `PUT /tips`; the tip must be one line without links, domains, IP addresses or phone numbers ([scheduler.md](docs/scheduler.md#http-api)) |
 | Release a change | Merge it in `mitaoe/cp-reminders`, then release it to the deployment repository ([Where it runs](#where-it-runs)). |
-| Change which contests are posted, or the standard tips | Edit `worker/config/` and release it ([formatter.md](docs/formatter.md)) |
+| Change which contests are posted, or the standard tips | Edit `worker/config/`, regenerate `testdata/reminders.json` with `pnpm --filter cp-reminders-worker run contract`, and release it ([formatter.md](docs/formatter.md)) |
 | A reminder failed | GitHub emails the failed `send` run; its summary holds the text to post by hand. |
+| The sender refused a text | Do not post it by hand; see [sender.md](docs/sender.md#troubleshooting). |
 | The sender is logged out | Pair again ([sender.md](docs/sender.md#pairing)) |
 | Keep the session alive | Open WhatsApp on the sender's phone at least every 14 days. |
 | Post to a different community | Add the sender's number to the community and make it a community admin. Find the community's Announcements JID with `wa groups` ([sender.md](docs/sender.md#announcements-jid)), then set it on the deployment repository: `gh secret set ANNOUNCE_JID --repo adityakotkar47/cp-reminders`. The next send run uses it. |

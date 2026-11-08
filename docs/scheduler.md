@@ -9,15 +9,16 @@ The Worker in `worker/` fetches contests, queues reminders in D1, wakes the send
 | `src/index.ts` | Route table and the `fetch` and `scheduled` entry points. |
 | `src/router.ts` | Path and method matching; bearer authentication per route. |
 | `src/auth.ts` | Bearer parsing and constant-time comparison of SHA-256 digests. |
-| `src/core/` | Contest selection and message formatting ([formatter.md](formatter.md)). |
+| `src/core/` | Contest selection, message formatting ([formatter.md](formatter.md)) and the free-text rules of the reminder format ([reminder-format.md](reminder-format.md)). |
 | `src/contests.ts` | Contest snapshot: clist, with the Codeforces API as fallback. |
 | `src/tick.ts` | One tick: refresh the snapshot, queue due reminders, expire, wake. |
 | `src/reminders.ts` | Claim, acknowledgement, lease and expiry SQL. |
 | `src/wake.ts` | `workflow_dispatch` of `send.yml`, debounced. |
 | `src/outbox.ts`, `src/admin.ts` | Request validation and handlers for the outbox and admin routes. |
 | `src/health.ts`, `src/badge.ts` | Health values and the public `/health` and `/badge` routes. |
-| `src/tips.ts`, `src/preview.ts` | One-off tips from D1; the preview text. |
+| `src/tips.ts`, `src/preview.ts` | One-off tips from D1, keeping only valid ones; the preview text. |
 | `src/config.ts` | `config/rules.json` and `config/tips.json`, bundled at deploy. |
+| `scripts/render-contract.ts` | Writes `testdata/reminders.json`, the formatter's output that the sender's tests check ([shared test data](reminder-format.md#shared-test-data)). |
 | `migrations/0001_init.sql` | D1 schema. |
 
 `POST /tick` and the `*/5 * * * *` cron trigger run the same `runTick` ([tick flow](architecture.md#tick-workers-cron-every-5-minutes), [reminder lifecycle](architecture.md#reminder-lifecycle)).
@@ -29,7 +30,8 @@ The routes and their contracts are in [architecture.md](architecture.md#worker-h
 - Tokens are accepted only in the `Authorization` header, never in the query string.
 - Authentication runs before the request body is read.
 - A known path with the wrong method answers 405; an unknown path answers 404.
-- `href` and `tip` are limited to 500 characters, `claimId` to 100, and an ack to 100 results. A `tip` must also be one line without a link or domain-like text ([formatter.md](formatter.md#tips)).
+- `href` is limited to 500 characters, `claimId` to 100, and an ack to 100 results.
+- `tip` must be the empty string, which suppresses the tip, or free text of at most 500 characters as [reminder-format.md](reminder-format.md#free-text) defines it: no link, domain, IP address, phone number or control character. Any other tip is refused with 400.
 - A one-off tip affects reminders queued after it is set; text already in the outbox does not change.
 
 ```sh
@@ -85,10 +87,13 @@ An external scheduler can call `POST /tick` as well, for example a cron-job.org 
 ```sh
 pnpm run typecheck          # wrangler types, then tsc --noEmit
 pnpm test                   # wrangler types, then Vitest in the Workers runtime with a local D1
+pnpm run contract           # regenerate testdata/reminders.json from the formatter
 pnpm run db:migrate:local   # apply migrations/ to the local D1 used by wrangler dev
 pnpm run dev                # wrangler dev --test-scheduled
 ```
 
 Tests run on [`@cloudflare/vitest-plugin`](https://developers.cloudflare.com/workers/testing/vitest-integration/get-started/write-your-first-test/). `test/setup.ts` applies `migrations/` to the test database. Outbound HTTP goes through an injected fetcher in unit tests and a spy on `globalThis.fetch` in route tests, so no test reaches the network.
+
+`pnpm run contract` runs `scripts/render-contract.ts` with Node, which executes TypeScript directly. Run it after any change to the formatter, its configuration or the contest fixtures, and commit the regenerated file; a Worker test fails while the file is out of date.
 
 The test secrets are defined once, as `TEST_SECRETS` in `vitest.config.ts`. Wrangler reads the keys in `secrets.required` from `.dev.vars`, `.env` or `process.env` and warns about missing ones ([local secrets](https://developers.cloudflare.com/workers/configuration/secrets/#local-development-with-secrets)), so the config copies `TEST_SECRETS` into `process.env`. The same object is passed as `miniflare.bindings`, which take precedence over the Wrangler configuration ([Vitest configuration](https://developers.cloudflare.com/workers/testing/vitest-integration/configuration/)), so a developer's own `.dev.vars` never reaches the tests.

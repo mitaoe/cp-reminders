@@ -1,6 +1,6 @@
 # Sender
 
-The sender (`sender/`, Go) is the only component that talks to WhatsApp. It claims queued reminders from the Worker's outbox, posts each one to the community's Announcements group, records what it delivered and acknowledges the results. It is an unofficial linked device built on [whatsmeow](https://pkg.go.dev/go.mau.fi/whatsmeow) and runs as a short GitHub Actions job ([workflow.md](workflow.md#sendyml-drain-the-outbox)). It never decides what to send or when, and never takes a destination from the network.
+The sender (`sender/`, Go) is the only component that talks to WhatsApp. It claims queued reminders from the Worker's outbox, checks that each one is a reminder in the agreed format, posts it to the community's Announcements group, records what it delivered and acknowledges the results. It is an unofficial linked device built on [whatsmeow](https://pkg.go.dev/go.mau.fi/whatsmeow) and runs as a short GitHub Actions job ([workflow.md](workflow.md#sendyml-drain-the-outbox)). It never decides what to send or when, and never takes a destination from the network.
 
 ## Commands
 
@@ -41,20 +41,28 @@ While a command runs, the decrypted database lives in a private temporary direct
 1. Check the configuration before any network call: the shape of `ANNOUNCE_JID`, a valid `AGE_IDENTITY` and a readable `sent.json`.
 2. `POST /outbox/claim {claimId}` with a random `claimId`. A claim is never retried: a retry after a lost response would leave the first claim's rows waiting for their lease to expire.
 3. With no items, print `outbox empty` and exit without decrypting the session or connecting.
-4. Validate the items. A claim of more than 5 items is refused as a whole; each key must be non-empty and unique; each text must be non-empty and at most 1,000 characters. Invalid items are acknowledged as `failed` and never sent.
-5. Items whose key is already in `sent.json` are acknowledged as `sent` with the stored message ID and not sent again. If nothing else is pending, WhatsApp is not contacted.
-6. Wait a random time between 0 and `--jitter`, decrypt the session, connect and wait for login.
-7. Check the target with `GetGroupInfo(ANNOUNCE_JID)`: it must be a community's default subgroup (`IsDefaultSubGroup`), and the sender must be admin or super admin, matched by phone-number JID or LID.
-8. Send each pending item as a plain text message (`waE2E.Message{Conversation: …}`), which carries no link preview, and record it in `sent.json` straight away. The first send error or `sent.json` write error stops sending; the remaining items are reported as `failed` ("not attempted").
-9. Disconnect and encrypt a snapshot of the session, so the rotated keys are saved even if the acknowledgement hangs. The decrypted store stays open ([shutdown](#shutdown)).
-10. `POST /outbox/ack {claimId, results}`, retrying network errors, 5xx and 429 up to 3 attempts with 1 s and 2 s backoff, within its own 60-second budget.
-11. Release the session, whatever the result of the run: save it unless the most recent save succeeded, then close the store and remove the decrypted copy.
+4. Validate the items. A claim of more than 5 items is refused as a whole; each key must be non-empty and unique; each text must be at most 1,000 characters and a reminder in the agreed format ([content checks](#content-checks)). Invalid items are acknowledged as `failed` and never sent.
+5. Items whose key is already in `sent.json` are acknowledged as `sent` with the stored message ID and not sent again.
+6. Apply the daily limit: at most 8 messages in any 24 hours, counted from `sent.json` ([content checks](#content-checks)). Pending items beyond it are acknowledged as `failed` ("daily limit") and the run fails. If nothing is left to send, WhatsApp is not contacted.
+7. Wait a random time between 0 and `--jitter`, decrypt the session, connect and wait for login.
+8. Check the target with `GetGroupInfo(ANNOUNCE_JID)`: it must be a community's default subgroup (`IsDefaultSubGroup`), and the sender must be admin or super admin, matched by phone-number JID or LID.
+9. Send each pending item as a plain text message (`waE2E.Message{Conversation: …}`), which carries no link preview, and record it in `sent.json` straight away. The first send error or `sent.json` write error stops sending; the remaining items are reported as `failed` ("not attempted").
+10. Disconnect and encrypt a snapshot of the session, so the rotated keys are saved even if the acknowledgement hangs. The decrypted store stays open ([shutdown](#shutdown)).
+11. `POST /outbox/ack {claimId, results}`, retrying network errors, 5xx and 429 up to 3 attempts with 1 s and 2 s backoff, within its own 60-second budget.
+12. Release the session, whatever the result of the run: save it unless the most recent save succeeded, then close the store and remove the decrypted copy.
 
-Any failure (connect, logged out, stream replaced, temporary ban, refused target, send, acknowledgement or session save) exits with code 1 and writes the job summary. Unsent items from a successful claim are acknowledged as `failed`, so the Worker queues them again while attempts remain.
+Any failure (invalid item, daily limit, connect, logged out, stream replaced, temporary ban, refused target, send, acknowledgement or session save) exits with code 1 and writes the job summary. Unsent items from a successful claim are acknowledged as `failed`, so the Worker queues them again while attempts remain.
 
 `--dry-run` claims, connects, checks the target and prints the texts; it does not send, write `sent.json` or acknowledge, so the claimed rows return to the queue when their 10-minute lease expires.
 
 Message text appears only in `--dry-run` output and in the failure summary, never in the normal log.
+
+### Content checks
+
+The sender trusts nothing the Worker hands it. Whoever controls the Worker, its deployment or `ADMIN_TOKEN` can put text into the outbox, so the sender, which holds the WhatsApp session, decides what may be posted.
+
+- **Format.** `internal/reminder` parses every text against the reminder format ([reminder-format.md](reminder-format.md)): the fixed lines in their order, a known platform, a time and a duration of the agreed shape, a link that is exactly `https://` and the platform's host followed by a plain path, and a contest name and tip that contain no link, domain, IP address, phone number or control character. A text that does not parse is refused whole; nothing in it is posted.
+- **Daily limit.** At most 8 messages are sent in any 24 hours, counted from `sent.json`; no 24 hours of the 15 months of contests in the test data needed more than 5. The limit keeps a flood of queued texts from becoming a burst of posts that risks a ban of the number. `sent.json` reaches branch `state` only through the Persist State job, and whoever holds the Worker's `GH_TOKEN` can cancel a run before that job saves it, so the count can be rolled back: the limit bounds bursts within the runs that complete, not the total over time.
 
 ### Shutdown
 
@@ -146,6 +154,8 @@ Use the candidate whose `community` is the right community and whose line shows 
 | `target is not a community announcements group` | `ANNOUNCE_JID` is a normal group or the community parent. | Use the `ANNOUNCEMENTS CANDIDATE` JID. |
 | `sender is not an admin of the target group` | The number is not a community admin. | Make it an admin from the owner's number. |
 | `passkey pairing is not supported` | The phone asked for passkey linking. | Use the other pairing method. |
+| `invalid item "…": …` naming a layout line, the platform, the timing, the duration, the contest link, or a contest name or tip that contains a link, domain, IP address, phone number or control character | The Worker queued a text that is not a reminder in the agreed format ([reminder-format.md](reminder-format.md)). The Worker retries it until its attempts run out, so each refused item fails up to 3 runs. | Find out how the text was produced: a formatter change that breaks the contract test, a stored tip, or a Worker that is not ours. Do not post such a text by hand. |
+| `… held back: daily limit of 8 messages in 24 hours reached` | 8 messages were already sent in the last 24 hours. | Post the held-back reminders by hand if they are genuine, and check why so many were queued. |
 | Summary says "delivered but not acknowledged" | The message was posted but `/outbox/ack` failed. | Nothing to post; the next run acknowledges it from `sent.json`. |
 | `outbox claim: HTTP 401` | `SENDER_TOKEN` differs between the Worker and GitHub. | Set the same value in both. |
 
@@ -154,7 +164,8 @@ Use the candidate whose `community` is the right community and whose line shows 
 | Package | Responsibility |
 |---|---|
 | `cmd/wa` | Flags, environment, wiring, the groups table and the pairing prompts. |
-| `internal/drain` | Claim, validate, deliver and acknowledge, and the failure summary. Depends only on the `Outbox`, `Session` and `Ledger` interfaces, so it is tested with fakes. |
+| `internal/drain` | Claim, validate, apply the daily limit, deliver and acknowledge, and the failure summary. Depends only on the `Outbox`, `Session` and `Ledger` interfaces, so it is tested with fakes. |
+| `internal/reminder` | The reminder format: `Parse` checks a text against it and returns its fields; `Reminder.String` writes one. |
 | `internal/outbox` | HTTP client for `/outbox/claim` and `/outbox/ack` with per-request timeouts and acknowledgement retries. |
 | `internal/redact` | Redacts WhatsApp IDs and long numbers from text, and wraps whatsmeow's and libsignal's loggers to do the same. |
 | `internal/state` | The age vault, the encrypted session store and the `sent.json` ledger. |
