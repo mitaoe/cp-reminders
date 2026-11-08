@@ -15,7 +15,9 @@ const (
 	maxCodeRunes    = 200
 	maxErrorRunes   = 1000
 	maxBacktickRun  = 15
+	maxFenceRun     = 63
 	escapedBacktick = "\\" + "u0060"
+	notValidated    = "not validated"
 )
 
 type summary struct {
@@ -35,10 +37,10 @@ func writeSummary(w io.Writer, s summary) error {
 			if s.AckErr != nil {
 				unacked = append(unacked, i)
 			}
-		case i < len(s.Invalid) && s.Invalid[i] != nil:
-			refused = append(refused, i)
-		default:
+		case i < len(s.Invalid) && s.Invalid[i] == nil:
 			manual = append(manual, i)
+		default:
+			refused = append(refused, i)
 		}
 	}
 
@@ -50,21 +52,18 @@ func writeSummary(w io.Writer, s summary) error {
 	if len(manual) > 0 {
 		fmt.Fprint(bw, "Post these manually in the Announcements group:\n\n")
 		for _, i := range listed(manual) {
-			it, r := s.Items[i], s.Results[i]
-			fmt.Fprintf(bw, "### %s\n\n", code(it.Key))
-			fmt.Fprintf(bw, "Contest start %s, deadline %s.", code(it.StartUTC), code(it.DeadlineUTC))
-			if r.Error != "" {
-				fmt.Fprintf(bw, " Reason: %s", code(redact.String(oneLine(r.Error))))
-			}
-			fence := fenceFor(it.Text)
-			fmt.Fprintf(bw, "\n\n%s\n%s\n%s\n\n", fence, it.Text, fence)
+			writeManual(bw, s.Items[i], s.Results[i])
 		}
 		writeNotListed(bw, len(manual))
 	}
 	if len(refused) > 0 {
-		fmt.Fprint(bw, "Refused by the sender's checks; not posted, and their texts are not shown:\n\n")
+		fmt.Fprint(bw, "Refused by validation; not posted, and their texts are not shown:\n\n")
 		for _, i := range listed(refused) {
-			fmt.Fprintf(bw, "- %s: %s\n", code(s.Items[i].Key), code(errText(s.Invalid[i])))
+			reason := notValidated
+			if i < len(s.Invalid) {
+				reason = errText(s.Invalid[i])
+			}
+			fmt.Fprintf(bw, "- %s: %s\n", code(s.Items[i].Key), code(reason))
 		}
 		fmt.Fprintln(bw)
 		writeNotListed(bw, len(refused))
@@ -80,6 +79,24 @@ func writeSummary(w io.Writer, s summary) error {
 	return bw.Flush()
 }
 
+func writeManual(w io.Writer, it outbox.Item, r outbox.Result) {
+	fmt.Fprintf(w, "### %s\n\n", code(it.Key))
+	fmt.Fprintf(w, "Contest start %s, deadline %s.", code(it.StartUTC), code(it.DeadlineUTC))
+	if r.Error != "" {
+		fmt.Fprintf(w, " Reason: %s", code(redact.String(oneLine(r.Error))))
+	}
+	backticks, tildes := longestRun(it.Text, '`'), longestRun(it.Text, '~')
+	switch {
+	case backticks > maxFenceRun:
+		fmt.Fprintf(w, "\n\nReminder text not shown: it contains a run of %d backticks.\n\n", backticks)
+	case tildes > maxFenceRun:
+		fmt.Fprintf(w, "\n\nReminder text not shown: it contains a run of %d tildes.\n\n", tildes)
+	default:
+		fence := fenceFor(it.Text)
+		fmt.Fprintf(w, "\n\n%s\n%s\n%s\n\n", fence, it.Text, fence)
+	}
+}
+
 func listed(indices []int) []int {
 	return indices[:min(len(indices), MaxItems)]
 }
@@ -91,7 +108,7 @@ func writeNotListed(w io.Writer, n int) {
 }
 
 func fenceFor(text string) string {
-	return strings.Repeat("`", max(3, longestBacktickRun(text)+1))
+	return strings.Repeat("`", max(3, longestRun(text, '`')+1))
 }
 
 func code(s string) string {
@@ -118,10 +135,10 @@ func codeSpan(s string, limit int) (string, bool) {
 		shortened = true
 	}
 	s = escapeControls(s)
-	if longestBacktickRun(s) > maxBacktickRun {
+	if longestRun(s, '`') > maxBacktickRun {
 		s = strings.ReplaceAll(s, "`", escapedBacktick)
 	}
-	delim := strings.Repeat("`", longestBacktickRun(s)+1)
+	delim := strings.Repeat("`", longestRun(s, '`')+1)
 	if strings.HasPrefix(s, "`") || strings.HasSuffix(s, "`") {
 		s = " " + s + " "
 	}
@@ -143,10 +160,10 @@ func escapeControls(s string) string {
 	return b.String()
 }
 
-func longestBacktickRun(s string) int {
+func longestRun(s string, c rune) int {
 	longest, run := 0, 0
 	for _, r := range s {
-		if r == '`' {
+		if r == c {
 			run++
 			longest = max(longest, run)
 		} else {

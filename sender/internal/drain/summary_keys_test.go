@@ -110,7 +110,7 @@ func TestSummaryShortensLongErrors(t *testing.T) {
 	items := []outbox.Item{{Key: "k1", Text: "reminder"}}
 	results := []outbox.Result{{Key: "k1", Status: outbox.StatusSent, MessageID: "M1"}}
 	var b strings.Builder
-	if err := writeSummary(&b, summary{Err: errors.New(long), Items: items, Results: results, AckErr: errors.New(long)}); err != nil {
+	if err := writeSummary(&b, summary{Err: errors.New(long), Items: items, Results: results, Invalid: []error{nil}, AckErr: errors.New(long)}); err != nil {
 		t.Fatal(err)
 	}
 	shortened := "`" + strings.Repeat("e", maxErrorRunes) + "…` (full error in the run log)"
@@ -139,7 +139,7 @@ func TestSummaryWithholdsTheTextOfRefusedItems(t *testing.T) {
 	if strings.Contains(got, "malicious text") {
 		t.Errorf("summary shows the text of a refused item:\n%s", got)
 	}
-	manual, refused, ok := strings.Cut(got, "Refused by the sender's checks")
+	manual, refused, ok := strings.Cut(got, "Refused by validation")
 	if !ok {
 		t.Fatalf("summary has no section for refused items:\n%s", got)
 	}
@@ -148,6 +148,63 @@ func TestSummaryWithholdsTheTextOfRefusedItems(t *testing.T) {
 	}
 	if !strings.Contains(refused, "\n- `bad`: `link to a host outside the allowlist: \"evil.example\"`\n") {
 		t.Errorf("refused section wrong:\n%s", refused)
+	}
+}
+
+func TestSummaryTreatsItemsWithoutValidationAsRefused(t *testing.T) {
+	items := []outbox.Item{{Key: "k1", Text: "first text"}, {Key: "k2", Text: "second text"}}
+	results := []outbox.Result{{Key: "k1", Status: outbox.StatusFailed}, {Key: "k2", Status: outbox.StatusFailed}}
+	for name, invalid := range map[string][]error{"missing": nil, "short": {nil}} {
+		t.Run(name, func(t *testing.T) {
+			var b strings.Builder
+			if err := writeSummary(&b, summary{Err: errors.New("x"), Items: items, Results: results, Invalid: invalid}); err != nil {
+				t.Fatal(err)
+			}
+			got := b.String()
+			if strings.Contains(got, "second text") {
+				t.Errorf("summary shows the text of an item without validation:\n%s", got)
+			}
+			if !strings.Contains(got, "\n- `k2`: `not validated`\n") {
+				t.Errorf("summary does not list the item as refused:\n%s", got)
+			}
+		})
+	}
+}
+
+func TestSummaryWithholdsTextsWithLongFenceRuns(t *testing.T) {
+	escape := "\n# Heading\n@everyone [x](https://evil.example)"
+	tests := []struct {
+		name, text, note string
+		shown            bool
+	}{
+		{"255 backticks", "reminder\n" + strings.Repeat("`", 255) + escape, "text not shown: it contains a run of 255 backticks", false},
+		{"64 tildes", "reminder\n" + strings.Repeat("~", 64) + escape, "text not shown: it contains a run of 64 tildes", false},
+		{"63 backticks", "reminder " + strings.Repeat("`", 63) + " end", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items := []outbox.Item{{Key: "k", Text: tt.text, StartUTC: "S", DeadlineUTC: "D"}}
+			results := []outbox.Result{{Key: "k", Status: outbox.StatusFailed, Error: "not attempted"}}
+			var b strings.Builder
+			if err := writeSummary(&b, summary{Err: errors.New("x"), Items: items, Results: results, Invalid: []error{nil}}); err != nil {
+				t.Fatal(err)
+			}
+			got := b.String()
+			if shown := strings.Contains(got, tt.text); shown != tt.shown {
+				t.Errorf("text shown: %v, want %v:\n%s", shown, tt.shown, got)
+			}
+			if tt.shown {
+				return
+			}
+			for _, want := range []string{"### `k`", "Contest start `S`, deadline `D`.", "Reason: `not attempted`", tt.note} {
+				if !strings.Contains(got, want) {
+					t.Errorf("summary missing %q:\n%s", want, got)
+				}
+			}
+			if strings.Contains(got, "# Heading") || strings.Contains(got, "@everyone") || strings.Contains(got, "evil.example") {
+				t.Errorf("summary contains parts of the withheld text:\n%s", got)
+			}
+		})
 	}
 }
 
@@ -194,7 +251,7 @@ func TestSummaryRendersUnsentItemValuesLiterally(t *testing.T) {
 	items := []outbox.Item{{Key: key, Text: "reminder", StartUTC: "2026`x\n## start", DeadlineUTC: "[d](https://evil.example)\n### deadline"}}
 	results := []outbox.Result{{Key: key, Status: outbox.StatusFailed, Error: "send: `oops` [x](https://evil.example)"}}
 	var b strings.Builder
-	if err := writeSummary(&b, summary{Err: errors.New("boom `x`"), Items: items, Results: results}); err != nil {
+	if err := writeSummary(&b, summary{Err: errors.New("boom `x`"), Items: items, Results: results, Invalid: []error{nil}}); err != nil {
 		t.Fatal(err)
 	}
 	got := b.String()
@@ -221,7 +278,7 @@ func TestSummaryRendersUnackedItemValuesLiterally(t *testing.T) {
 	items := []outbox.Item{{Key: key, Text: "reminder"}}
 	results := []outbox.Result{{Key: key, Status: outbox.StatusSent, MessageID: "M`1\n# id"}}
 	var b strings.Builder
-	if err := writeSummary(&b, summary{Err: errors.New("ack failed"), Items: items, Results: results, AckErr: errors.New("HTTP `502`")}); err != nil {
+	if err := writeSummary(&b, summary{Err: errors.New("ack failed"), Items: items, Results: results, Invalid: []error{nil}, AckErr: errors.New("HTTP `502`")}); err != nil {
 		t.Fatal(err)
 	}
 	got := b.String()
@@ -253,7 +310,7 @@ func TestRunReportsInvalidItemsWithoutTheirText(t *testing.T) {
 	if strings.Contains(got, "REFUSED") {
 		t.Errorf("summary shows the text of an invalid item:\n%s", got)
 	}
-	if !strings.Contains(got, "Refused by the sender's checks") || !strings.Contains(got, "\n- `too-long`: `text is ") {
+	if !strings.Contains(got, "Refused by validation") || !strings.Contains(got, "\n- `too-long`: `text is ") {
 		t.Errorf("summary does not list the invalid item as refused:\n%s", got)
 	}
 }
@@ -276,14 +333,14 @@ func FuzzCode(f *testing.F) {
 		if closing < open || !strings.HasSuffix(out, strings.Repeat("`", open)) || strings.HasPrefix(inner, "`") || strings.HasSuffix(inner, "`") {
 			t.Fatalf("code(%q) = %q does not end with its opening delimiter", s, out)
 		}
-		if longestBacktickRun(inner) >= open {
+		if longestRun(inner, '`') >= open {
 			t.Fatalf("code(%q) = %q has a backtick run as long as its delimiter", s, out)
 		}
-		if open > 17 {
+		if open > 16 {
 			t.Fatalf("code(%q) = %q has a delimiter of %d backticks", s, out, open)
 		}
 		value := oneLine(s)
-		if value == "" || !utf8.ValidString(s) || utf8.RuneCountInString(value) > maxCodeRunes || strings.IndexFunc(value, needsEscape) >= 0 || longestBacktickRun(value) >= 16 {
+		if value == "" || !utf8.ValidString(s) || utf8.RuneCountInString(value) > maxCodeRunes || strings.IndexFunc(value, needsEscape) >= 0 || longestRun(value, '`') >= 16 {
 			return
 		}
 		shown := inner

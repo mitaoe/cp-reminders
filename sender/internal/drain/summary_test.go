@@ -16,7 +16,7 @@ func TestSummaryListsOnlyUnsentItemsWithText(t *testing.T) {
 		{Key: "k3", Status: outbox.StatusFailed, Error: "not attempted"},
 	}
 	var b strings.Builder
-	if err := writeSummary(&b, summary{Err: errors.New("send failed"), Items: items, Results: results}); err != nil {
+	if err := writeSummary(&b, summary{Err: errors.New("send failed"), Items: items, Results: results, Invalid: make([]error, len(items))}); err != nil {
 		t.Fatal(err)
 	}
 	got := b.String()
@@ -43,6 +43,7 @@ func TestSummaryFenceIsLongerThanBackticksInText(t *testing.T) {
 		Err:     errors.New("x"),
 		Items:   []outbox.Item{item("k", text)},
 		Results: []outbox.Result{{Key: "k", Status: outbox.StatusFailed}},
+		Invalid: []error{nil},
 	})
 	if !strings.Contains(b.String(), "`````\n"+text+"\n`````") {
 		t.Errorf("fence not widened:\n%s", b.String())
