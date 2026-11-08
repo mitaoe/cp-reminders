@@ -42,7 +42,7 @@ Runs on a push to `main` that changes `worker/`, the workspace files (`package.j
 | Permissions | `contents: read` | It only reads the code. |
 | Jobs | `check`, then `deploy` (`needs: check`), each on its own runner | The typecheck and the tests, which run the test framework and the repository's test code, never run on the runner that receives the Cloudflare token. |
 | Secrets | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` in the `env:` of the migration and deploy steps of `deploy` | Wrangler reads both from the environment ([system environment variables](https://developers.cloudflare.com/workers/wrangler/system-environment-variables/)). Wrangler and the packages it loads necessarily run with the token. |
-| Cache | `check` restores and saves the pnpm store; `deploy` only restores it (`save-cache: false`) | A job that held the token never writes the cache. |
+| Cache | `check` restores and saves the pnpm store; `deploy` does not use it and installs from the registry | Nothing written by a job that ran test code reaches the runner that receives the token, and every package `deploy` installs is checked against the lockfile's hashes. |
 
 Jobs, in `worker/`:
 
