@@ -74,7 +74,7 @@ The Worker also logs, with `console.error`:
 
 ## Deployment
 
-Releases are deployed by `deploy.yml` in the deployment repository when a Sync fork brings in Worker changes ([README](../README.md#where-it-runs); [workflow.md](workflow.md#deployyml-deploy-the-worker)). The first deployment of a new Worker is done by hand, with commands run in `worker/` and the Cloudflare account logged in (`pnpm exec wrangler login`):
+Releases are deployed by `deploy.yml` in the deployment repository when a Sync fork brings in a change to `worker/`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or `deploy.yml` ([README](../README.md#where-it-runs); [workflow.md](workflow.md#deployyml-deploy-the-worker)). The first deployment of a new Worker is done by hand, with commands run in `worker/` and the Cloudflare account logged in (`pnpm exec wrangler login`):
 
 1. Create the database with `pnpm exec wrangler d1 create cp-reminders` and put its `database_id` in `wrangler.jsonc`; `vars.GH_REPO` names the deployment repository.
 2. Apply the schema: `pnpm run db:migrate:remote`.
