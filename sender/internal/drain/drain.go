@@ -93,7 +93,8 @@ func (d *Drainer) Run(ctx context.Context) error {
 	results := make([]outbox.Result, len(items))
 	var pending []int
 	var failures []error
-	for i, verr := range ValidateItems(items) {
+	invalid := ValidateItems(items)
+	for i, verr := range invalid {
 		key := items[i].Key
 		if verr != nil {
 			results[i] = failedResult(key, verr)
@@ -123,7 +124,7 @@ func (d *Drainer) Run(ctx context.Context) error {
 	}
 	runErr := errors.Join(failures...)
 	if runErr != nil {
-		d.report(summary{Err: runErr, Items: items, Results: results, AckErr: ackErr})
+		d.report(summary{Err: runErr, Items: items, Results: results, Invalid: invalid, AckErr: ackErr})
 	}
 	return runErr
 }

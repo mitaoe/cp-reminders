@@ -1,6 +1,7 @@
 package drain
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -74,10 +75,117 @@ func TestCodeSpanEscapesControlCharacters(t *testing.T) {
 
 func TestCodeSpanShortensLongValues(t *testing.T) {
 	if got, want := code(strings.Repeat("x", maxCodeRunes)), "`"+strings.Repeat("x", maxCodeRunes)+"`"; got != want {
-		t.Errorf("value at the limit: got %d runes, want it unchanged", utf8.RuneCountInString(got))
+		t.Errorf("value at the limit: got %q, want %q", got, want)
 	}
 	if got, want := code(strings.Repeat("é", maxCodeRunes+50)), "`"+strings.Repeat("é", maxCodeRunes)+"…`"; got != want {
 		t.Errorf("long value: got %q, want %q", got, want)
+	}
+}
+
+func TestCodeSpanEscapesLongBacktickRuns(t *testing.T) {
+	link := "[x](https://evil.example)"
+	got := code(strings.Repeat("`", 80) + link)
+	if want := "`" + strings.Repeat(backslash+"u0060", 80) + link + "`"; got != want {
+		t.Errorf("80 backticks: got %q, want %q", got, want)
+	}
+	if got, want := code("a"+strings.Repeat("`", 15)+"b"), strings.Repeat("`", 16)+"a"+strings.Repeat("`", 15)+"b"+strings.Repeat("`", 16); got != want {
+		t.Errorf("15 backticks: got %q, want %q", got, want)
+	}
+	if got, want := code("a"+strings.Repeat("`", 16)+"b"), "`a"+strings.Repeat(backslash+"u0060", 16)+"b`"; got != want {
+		t.Errorf("16 backticks: got %q, want %q", got, want)
+	}
+}
+
+func TestErrorSpanAllowsLongerValuesAndPointsToTheLog(t *testing.T) {
+	if got, want := errorCode(strings.Repeat("x", maxErrorRunes)), "`"+strings.Repeat("x", maxErrorRunes)+"`"; got != want {
+		t.Errorf("error at the limit: got %q, want %q", got, want)
+	}
+	if got, want := errorCode(strings.Repeat("x", maxErrorRunes+1)), "`"+strings.Repeat("x", maxErrorRunes)+"…` (full error in the run log)"; got != want {
+		t.Errorf("long error: got %q, want %q", got, want)
+	}
+}
+
+func TestSummaryShortensLongErrors(t *testing.T) {
+	long := strings.Repeat("e", maxErrorRunes+10)
+	items := []outbox.Item{{Key: "k1", Text: "reminder"}}
+	results := []outbox.Result{{Key: "k1", Status: outbox.StatusSent, MessageID: "M1"}}
+	var b strings.Builder
+	if err := writeSummary(&b, summary{Err: errors.New(long), Items: items, Results: results, AckErr: errors.New(long)}); err != nil {
+		t.Fatal(err)
+	}
+	shortened := "`" + strings.Repeat("e", maxErrorRunes) + "…` (full error in the run log)"
+	for _, want := range []string{"Error: " + shortened + "\n", "Delivered but not acknowledged (" + shortened + ")"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("summary missing %q", want)
+		}
+	}
+}
+
+func TestSummaryWithholdsTheTextOfRefusedItems(t *testing.T) {
+	items := []outbox.Item{
+		{Key: "good", Text: "valid reminder text"},
+		{Key: "bad", Text: "malicious text https://evil.example"},
+	}
+	results := []outbox.Result{
+		{Key: "good", Status: outbox.StatusFailed, Error: "send: websocket closed"},
+		{Key: "bad", Status: outbox.StatusFailed, Error: "link to a host outside the allowlist"},
+	}
+	invalid := []error{nil, errors.New("link to a host outside the allowlist: \"evil.example\"")}
+	var b strings.Builder
+	if err := writeSummary(&b, summary{Err: errors.New("x"), Items: items, Results: results, Invalid: invalid}); err != nil {
+		t.Fatal(err)
+	}
+	got := b.String()
+	if strings.Contains(got, "malicious text") {
+		t.Errorf("summary shows the text of a refused item:\n%s", got)
+	}
+	manual, refused, ok := strings.Cut(got, "Refused by the sender's checks")
+	if !ok {
+		t.Fatalf("summary has no section for refused items:\n%s", got)
+	}
+	if !strings.Contains(manual, "2 reminder(s) not delivered") || !strings.Contains(manual, "### `good`") || !strings.Contains(manual, "valid reminder text") || strings.Contains(manual, "`bad`") {
+		t.Errorf("manual section wrong:\n%s", manual)
+	}
+	if !strings.Contains(refused, "\n- `bad`: `link to a host outside the allowlist: \"evil.example\"`\n") {
+		t.Errorf("refused section wrong:\n%s", refused)
+	}
+}
+
+func TestSummaryListsAtMostMaxItemsPerSection(t *testing.T) {
+	var items []outbox.Item
+	var results []outbox.Result
+	var invalid []error
+	tooMany := errors.New("claim returned 7 items, more than the limit of 5")
+	for i := range MaxItems + 2 {
+		key := "refused-" + strings.Repeat("r", i+1)
+		items = append(items, outbox.Item{Key: key, Text: "text of " + key})
+		results = append(results, outbox.Result{Key: key, Status: outbox.StatusFailed, Error: tooMany.Error()})
+		invalid = append(invalid, tooMany)
+	}
+	for i := range MaxItems + 1 {
+		key := "unsent-" + strings.Repeat("u", i+1)
+		items = append(items, outbox.Item{Key: key, Text: "text of " + key})
+		results = append(results, outbox.Result{Key: key, Status: outbox.StatusFailed, Error: "not attempted"})
+		invalid = append(invalid, nil)
+	}
+	var b strings.Builder
+	if err := writeSummary(&b, summary{Err: errors.New("x"), Items: items, Results: results, Invalid: invalid}); err != nil {
+		t.Fatal(err)
+	}
+	got := b.String()
+	if n := strings.Count(got, "\n### "); n != MaxItems {
+		t.Errorf("listed %d reminders to post, want %d:\n%s", n, MaxItems, got)
+	}
+	if n := strings.Count(got, "\n- `refused-"); n != MaxItems {
+		t.Errorf("listed %d refused reminders, want %d:\n%s", n, MaxItems, got)
+	}
+	for _, want := range []string{"1 more not listed.", "2 more not listed."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("summary missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "text of refused-") {
+		t.Errorf("summary shows the text of a refused item:\n%s", got)
 	}
 }
 
@@ -132,6 +240,24 @@ func TestSummaryRendersUnackedItemValuesLiterally(t *testing.T) {
 	}
 }
 
+func TestRunReportsInvalidItemsWithoutTheirText(t *testing.T) {
+	refusedText := "REFUSED" + strings.Repeat("x", MaxTextRunes)
+	h := newHarness(
+		outbox.Item{Key: "too-long", Text: refusedText, StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"},
+		outbox.Item{Key: "fine", Text: "fine reminder", StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"},
+	)
+	if err := h.d.Run(context.Background()); err == nil {
+		t.Fatal("Run succeeded with an invalid item")
+	}
+	got := h.summary.String()
+	if strings.Contains(got, "REFUSED") {
+		t.Errorf("summary shows the text of an invalid item:\n%s", got)
+	}
+	if !strings.Contains(got, "Refused by the sender's checks") || !strings.Contains(got, "\n- `too-long`: `text is ") {
+		t.Errorf("summary does not list the invalid item as refused:\n%s", got)
+	}
+}
+
 func FuzzCode(f *testing.F) {
 	for _, seed := range []string{"k1", "a`b", "`x`", "```", "", " ", "line\nbreak", "a" + string(rune(0x202E)) + "b", strings.Repeat("`", 300)} {
 		f.Add(seed)
@@ -153,8 +279,11 @@ func FuzzCode(f *testing.F) {
 		if longestBacktickRun(inner) >= open {
 			t.Fatalf("code(%q) = %q has a backtick run as long as its delimiter", s, out)
 		}
+		if open > 17 {
+			t.Fatalf("code(%q) = %q has a delimiter of %d backticks", s, out, open)
+		}
 		value := oneLine(s)
-		if value == "" || !utf8.ValidString(s) || utf8.RuneCountInString(value) > maxCodeRunes || strings.IndexFunc(value, needsEscape) >= 0 {
+		if value == "" || !utf8.ValidString(s) || utf8.RuneCountInString(value) > maxCodeRunes || strings.IndexFunc(value, needsEscape) >= 0 || longestBacktickRun(value) >= 16 {
 			return
 		}
 		shown := inner
@@ -168,5 +297,5 @@ func FuzzCode(f *testing.F) {
 }
 
 func needsEscape(r rune) bool {
-	return !unicode.IsGraphic(r) || unicode.Is(unicode.Bidi_Control, r)
+	return !unicode.IsGraphic(r)
 }
