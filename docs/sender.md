@@ -48,7 +48,7 @@ While a command runs, the decrypted database lives in a private temporary direct
 8. Send each pending item as a plain text message (`waE2E.Message{Conversation: …}`), which carries no link preview, and record it in `sent.json` straight away. The first send error or `sent.json` write error stops sending; the remaining items are reported as `failed` ("not attempted").
 9. Disconnect and encrypt a snapshot of the session, so the rotated keys are saved even if the acknowledgement hangs. The decrypted store stays open ([shutdown](#shutdown)).
 10. `POST /outbox/ack {claimId, results}`, retrying network errors, 5xx and 429 up to 3 attempts with 1 s and 2 s backoff, within its own 60-second budget.
-11. Release the session, whatever the result of the run: save it once more if the last save failed, then close the store and remove the decrypted copy.
+11. Release the session, whatever the result of the run: save it unless the most recent save succeeded, then close the store and remove the decrypted copy.
 
 Any failure (connect, logged out, stream replaced, temporary ban, refused target, send, acknowledgement or session save) exits with code 1 and writes the job summary. Unsent items from a successful claim are acknowledged as `failed`, so the Worker queues them again while attempts remain.
 
@@ -58,17 +58,20 @@ Message text appears only in `--dry-run` output and in the failure summary, neve
 
 ### Shutdown
 
-The decrypted store holds the device's Signal state: its identity, sessions, sender keys and pre-keys, plus app state and contact details. It does not hold messages; the record of what was delivered is `sent.json`.
+The decrypted store holds the device's Signal state: its identity, sessions, sender keys and pre-keys, plus app state and contact details. It does not hold the sent messages; the record of what was delivered is `sent.json`.
 
 whatsmeow keeps using the store after `Disconnect()` returns ([library behaviour](#library-behaviour-the-code-depends-on)), so the session is saved without closing the store, and closed only when the command ends:
 
 1. **Save** runs after `Disconnect()` returns. whatsmeow writes key changes to the store before sending anything that depends on them, and nothing can be sent after `Disconnect()`, so the store then holds every key a later run needs. Save writes a consistent copy of the open store with SQLite's `VACUUM INTO`, encrypts it into `session.db.age` and deletes the copy. Readers continue while it runs; writers wait for it, up to the 10-second `busy_timeout`.
 2. **The store stays open** while the drain acknowledges, so whatsmeow's leftover goroutines do not fail on a closed database. With the socket closed they fail at their network step instead: app state sync logs that at debug level, and others, such as a pre-key upload, may still log an error. What they write to the store after the snapshot is not kept, for example sessions deleted after an identity-change notification; the next run starts from the snapshot.
-3. **Release** closes the store and removes the decrypted copy, after a successful or a failed run. If the last save failed, it saves once more first.
+3. **Release** closes the store and removes the decrypted copy, after a successful or a failed run. Unless the most recent save succeeded, it saves first: after a failed save, and also for a session that was opened but never saved, so a session is never closed without having been written.
 
 `--dry-run` and `wa groups` release right after saving, and `wa pair` and a failed connection save and close in one step, so in those cases leftover goroutines can still log errors about a closed database.
 
-A save or release that fails after an otherwise successful run makes the command exit with code 1, so the workflow run fails and GitHub emails the owner; no job summary is written for it, because every reminder was delivered and acknowledged.
+Errors are reported as follows:
+
+- A failed first save, right after `Disconnect()`, is part of the run's result: the run fails, the job summary shows it as `close session: save session: …`, and the command exits with code 1. A successful save in Release afterwards does not clear that error; the run still exits with code 1.
+- A failure inside Release itself (its save or closing the store) makes the command exit with code 1, so the workflow run fails and GitHub emails the owner, but no job summary is written for it.
 
 ### Public output
 
