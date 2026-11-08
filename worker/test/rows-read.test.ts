@@ -1,6 +1,8 @@
 import { env } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { baseOverrides, rules, tipRules } from "../src/config.ts";
 import { isoUtc } from "../src/core/format.ts";
+import { selectContests } from "../src/core/select.ts";
 import { COUNTS_KEY, readHealth, storeCountsStatement } from "../src/health.ts";
 import { allMetaStatement } from "../src/meta.ts";
 import {
@@ -11,7 +13,10 @@ import {
   pendingStatement,
   sweepStatements,
 } from "../src/reminders.ts";
-import { MIN, NOW, resetDb, seedReminder } from "./helpers.ts";
+import { dueRow, insertStatement, missedRow } from "../src/tick.ts";
+import { MIN, NOW, TARGET, fixtureContests, resetDb, seedReminder } from "./helpers.ts";
+
+const MISSED = selectContests(fixtureContests, rules).find((c) => c.href !== TARGET.href)!;
 
 const HISTORY = 300;
 const SMALL = 20;
@@ -52,6 +57,9 @@ const hotStatements: [string, () => D1PreparedStatement][] = [
   ["the sweep of lapsed claims out of attempts", () => sweepStatements(env.DB, NOW)[2]!],
   ["the claim", () => claimStatement(env.DB, CLAIM_ID, NOW)],
   ["an acknowledgement", () => ackStatement(env.DB, CLAIM_ID, { key: "held", status: "failed", error: "probe" }, NOW)],
+  ["queueing a due reminder", () => insertStatement(env.DB, TARGET, dueRow(TARGET, tipRules, baseOverrides), NOW)],
+  ["recording a missed window", () => insertStatement(env.DB, MISSED, missedRow(MISSED), NOW)],
+  ["recording a missed window again", () => insertStatement(env.DB, MISSED, missedRow(MISSED), NOW)],
 ];
 
 const run = async (statement: D1PreparedStatement) => (await statement.run()).meta;
@@ -105,6 +113,11 @@ describe("statements that run on every tick, send run or public request read a b
 
     it("the sweep of lapsed claims out of attempts fails the lapsed claim", async () => {
       expect((await run(sweepStatements(env.DB, NOW)[2]!)).changes).toBe(1);
+    });
+
+    it("recording a missed window inserts its row once", async () => {
+      expect((await run(insertStatement(env.DB, MISSED, missedRow(MISSED), NOW))).changes).toBe(1);
+      expect((await run(insertStatement(env.DB, MISSED, missedRow(MISSED), NOW))).changes).toBe(0);
     });
 
     it("the claim takes the queued reminder", async () => {

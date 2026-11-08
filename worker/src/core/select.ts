@@ -9,6 +9,12 @@ export interface Rules {
   minLeadMinutes: number;
 }
 
+export interface ReminderWindow {
+  opensMs: number;
+  closesMs: number;
+}
+
+const MIN_MS = 60_000;
 const PURE_DIV = { 1: /Div\.\s*1(?!\s*\+)\b/, 2: /Div\.\s*2\b/ } as const;
 const COMBINED_DIV = /Div\.\s*1\s*\+/;
 
@@ -39,15 +45,27 @@ export function selectContests(list: readonly Contest[], rules: Rules): Contest[
 
 export const reminderKey = (c: Contest): string => `${c.resource_id}|${c.href}`;
 
+export function reminderWindow(c: Contest, rules: Rules): ReminderWindow {
+  const startMs = utcMs(c.start);
+  return { opensMs: startMs - rules.leadMinutes * MIN_MS, closesMs: startMs - rules.minLeadMinutes * MIN_MS };
+}
+
 export function dueReminders(list: readonly Contest[], rules: Rules, nowMs: number): Contest[] {
   return selectContests(list, rules).filter((c) => {
-    const start = utcMs(c.start);
-    return nowMs >= start - rules.leadMinutes * 60_000 && nowMs <= start - rules.minLeadMinutes * 60_000;
+    const { opensMs, closesMs } = reminderWindow(c, rules);
+    return opensMs <= nowMs && nowMs <= closesMs;
+  });
+}
+
+export function missedReminders(list: readonly Contest[], rules: Rules, nowMs: number, lastTickMs: number): Contest[] {
+  return selectContests(list, rules).filter((c) => {
+    const { opensMs, closesMs } = reminderWindow(c, rules);
+    return lastTickMs < opensMs && closesMs < nowMs;
   });
 }
 
 export function unlinkedContests(list: readonly Contest[], rules: Rules, nowMs: number): Contest[] {
   return selectContests(list, rules).filter(
-    (c) => nowMs <= utcMs(c.start) - rules.minLeadMinutes * 60_000 && contestLink(c) === undefined,
+    (c) => nowMs <= reminderWindow(c, rules).closesMs && contestLink(c) === undefined,
   );
 }

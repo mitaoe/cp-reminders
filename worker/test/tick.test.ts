@@ -2,8 +2,11 @@ import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { baseOverrides, rules, tipRules } from "../src/config.ts";
 import { SNAPSHOT_TTL_MS } from "../src/contests.ts";
-import { formatReminder, isoUtc } from "../src/core/format.ts";
-import { reminderKey } from "../src/core/select.ts";
+import { type Contest, PLATFORM, formatReminder, isoUtc, utcMs } from "../src/core/format.ts";
+import { reminderKey, selectContests } from "../src/core/select.ts";
+import type { Fetcher } from "../src/env.ts";
+import { MISSED_WINDOW } from "../src/errors.ts";
+import { readHealth } from "../src/health.ts";
 import { getMeta } from "../src/meta.ts";
 import { runTick } from "../src/tick.ts";
 import { WAKE_DEBOUNCE_MS } from "../src/wake.ts";
@@ -22,7 +25,10 @@ import {
   seedReminder,
 } from "./helpers.ts";
 
+const TICK_MS = 5 * MIN;
+
 let consoleError: ReturnType<typeof vi.spyOn>;
+const configuredExclude = rules.exclude;
 
 beforeEach(async () => {
   await resetDb();
@@ -30,6 +36,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  rules.exclude = configuredExclude;
   vi.restoreAllMocks();
 });
 
@@ -38,6 +45,10 @@ const count = async (where = "1 = 1") =>
 
 const targetInFixtures = fixtureContests.find((c) => c.href === TARGET.href)!;
 const onlyContests = (...contests: typeof fixtureContests) => mockFetch({ clist: () => jsonResponse({ objects: contests }) });
+
+async function tickEvery5Minutes(fromMs: number, untilMs: number, fetcher: Fetcher): Promise<void> {
+  for (let t = fromMs; t <= untilMs; t += TICK_MS) await runTick(env, t, fetcher);
+}
 
 describe("runTick: queueing", () => {
   it("queues a due reminder with its rendered text and deadline", async () => {
@@ -62,7 +73,7 @@ describe("runTick: queueing", () => {
     const { fetcher } = onlyContests(targetInFixtures);
     expect((await runTick(env, NOW - MIN, fetcher)).queued).toBe(0);
     expect((await runTick(env, TARGET_DEADLINE + 1000, fetcher)).queued).toBe(0);
-    expect(await count()).toBe(0);
+    expect(await count("status = 'queued'")).toBe(0);
   });
 
   it("is idempotent across ticks", async () => {
@@ -192,6 +203,113 @@ describe("runTick: contests the formatter cannot render as given", () => {
     const { fetcher } = onlyContests(phone);
     expect((await runTick(env, NOW, fetcher)).queued).toBe(1);
     expect(consoleError).toHaveBeenCalledWith(`contest name replaced by the fallback name: ${TARGET_KEY}`);
+  });
+});
+
+describe("runTick: windows that lie entirely between two successful ticks", () => {
+  const beforeWindow = NOW - 2 * SNAPSHOT_TTL_MS;
+  const afterWindow = TARGET_DEADLINE + MIN;
+
+  it("records a selected contest whose window lay in the gap as expired with missed_window", async () => {
+    const { fetcher, calls } = onlyContests(targetInFixtures);
+    await runTick(env, beforeWindow, fetcher);
+    const result = await runTick(env, afterWindow, fetcher);
+
+    expect(result).toMatchObject({ queued: 0, woke: false });
+    expect(result.errors).toContain(`missed reminder window: ${TARGET_KEY}`);
+    expect(await count()).toBe(1);
+    expect(await getReminder(TARGET_KEY)).toMatchObject({
+      start_utc: isoUtc(TARGET_START),
+      deadline_utc: isoUtc(TARGET_DEADLINE),
+      text: "",
+      status: "expired",
+      attempts: 0,
+      last_error: MISSED_WINDOW,
+      created_at: isoUtc(afterWindow),
+      updated_at: isoUtc(afterWindow),
+    });
+    expect(calls.github).toHaveLength(0);
+    expect(consoleError).toHaveBeenCalledWith(`missed reminder window: ${TARGET_KEY}`);
+    expect((await readHealth(env.DB)).expired24h).toBe(1);
+  });
+
+  it("records it once", async () => {
+    const { fetcher } = onlyContests(targetInFixtures);
+    await runTick(env, beforeWindow, fetcher);
+    await runTick(env, afterWindow, fetcher);
+    const third = await runTick(env, afterWindow + MIN, fetcher);
+    expect(third.errors).not.toContain(`missed reminder window: ${TARGET_KEY}`);
+    expect(await count()).toBe(1);
+  });
+
+  it("records a contest that has already started when ticks resume", async () => {
+    const { fetcher } = onlyContests(targetInFixtures);
+    await runTick(env, beforeWindow, fetcher);
+    await runTick(env, TARGET_START + 3 * 60 * MIN, fetcher);
+    expect(await getReminder(TARGET_KEY)).toMatchObject({ status: "expired", last_error: MISSED_WINDOW });
+  });
+
+  it("leaves a contest that has a row untouched", async () => {
+    const { fetcher } = onlyContests(targetInFixtures);
+    await runTick(env, beforeWindow, fetcher);
+    await seedReminder({ key: TARGET_KEY, status: "sent", attempts: 1, text: "original", updated_at: isoUtc(NOW) });
+    const result = await runTick(env, afterWindow, fetcher);
+    expect(result.errors).not.toContain(`missed reminder window: ${TARGET_KEY}`);
+    expect(await getReminder(TARGET_KEY)).toMatchObject({ status: "sent", text: "original", last_error: null });
+  });
+
+  it("queues rather than records a contest whose window is open", async () => {
+    const { fetcher } = onlyContests(targetInFixtures);
+    await runTick(env, beforeWindow, fetcher);
+    expect((await runTick(env, NOW, fetcher)).queued).toBe(1);
+    expect(await getReminder(TARGET_KEY)).toMatchObject({ status: "queued", last_error: null });
+  });
+
+  it("records nothing on the first tick ever", async () => {
+    const { fetcher } = onlyContests(targetInFixtures);
+    const first = await runTick(env, afterWindow, fetcher);
+    const second = await runTick(env, afterWindow + TICK_MS, fetcher);
+    expect([...first.errors, ...second.errors]).not.toContain(`missed reminder window: ${TARGET_KEY}`);
+    expect(await count()).toBe(0);
+  });
+
+  it("records nothing when a tick ran while the window was open", async () => {
+    let listed = fixtureContests.filter((c) => c.href !== TARGET.href);
+    const { fetcher } = mockFetch({ clist: () => jsonResponse({ objects: listed }) });
+    await runTick(env, NOW + TICK_MS, fetcher);
+    listed = [targetInFixtures];
+    const result = await runTick(env, NOW + TICK_MS + SNAPSHOT_TTL_MS, fetcher);
+    expect(result.errors).not.toContain(`missed reminder window: ${TARGET_KEY}`);
+    expect(await getReminder(TARGET_KEY)).toBeNull();
+  });
+
+  it("records nothing for a past contest that a rules change newly selects", async () => {
+    rules.exclude = { ...configuredExclude, [PLATFORM[TARGET.resource_id]!]: ["."] };
+    const { fetcher } = onlyContests(targetInFixtures);
+    await tickEvery5Minutes(beforeWindow, TARGET_DEADLINE, fetcher);
+    rules.exclude = configuredExclude;
+    const result = await runTick(env, TARGET_DEADLINE + TICK_MS, fetcher);
+    expect(result.errors).not.toContain(`missed reminder window: ${TARGET_KEY}`);
+    expect(await count()).toBe(0);
+  });
+
+  it("records nothing for a Div. 2 twin listed after the Div. 1 reminder was queued", async () => {
+    const div1 = fixtureContests.find((c) => c.resource_id === 1 && /\(Div\. 1\)/.test(c.event))!;
+    const div2 = fixtureContests.find((c) => c.start === div1.start && /\(Div\. 2\)/.test(c.event))!;
+    const merged: Contest = selectContests([div1, div2], rules)[0]!;
+    const opensMs = utcMs(div1.start) - rules.leadMinutes * MIN;
+    let listed = [div1];
+    const { fetcher } = mockFetch({ clist: () => jsonResponse({ objects: listed }) });
+
+    await tickEvery5Minutes(opensMs, opensMs + SNAPSHOT_TTL_MS - TICK_MS, fetcher);
+    expect(await getReminder(reminderKey(div1))).not.toBeNull();
+    listed = [div1, div2];
+    const result = await runTick(env, opensMs + SNAPSHOT_TTL_MS, fetcher);
+
+    expect(reminderKey(merged)).not.toBe(reminderKey(div1));
+    expect(result.errors).not.toContain(`missed reminder window: ${reminderKey(merged)}`);
+    expect(await getReminder(reminderKey(merged))).toBeNull();
+    expect(await count()).toBe(1);
   });
 });
 

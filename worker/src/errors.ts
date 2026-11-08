@@ -8,6 +8,7 @@ export const FAILURE = {
 export const httpFailure = (status: number): string => `HTTP ${status}`;
 
 export const NO_CONTEST_LINK = "no_contest_link";
+export const MISSED_WINDOW = "missed_window";
 
 export class UpstreamError extends Error {
   constructor(

@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SNAPSHOT_TTL_MS, ensureSnapshot } from "../src/contests.ts";
+import { SNAPSHOT_LOOKBACK_MS, SNAPSHOT_TTL_MS, ensureSnapshot } from "../src/contests.ts";
 import { isoUtc } from "../src/core/format.ts";
 import { FAILURE, httpFailure } from "../src/errors.ts";
 import { getMeta } from "../src/meta.ts";
@@ -42,7 +42,7 @@ describe("ensureSnapshot: clist", () => {
     expect(result.contests).toHaveLength(fixtureContests.length);
     expect(calls.clist).toHaveLength(1);
     expect(calls.clist[0]!.url).toBe(
-      `https://clist.by/api/v4/contest/?resource_id__in=1,2,93,102&start__gt=${isoUtc(NOW).slice(0, 19)}&order_by=start&limit=100`,
+      `https://clist.by/api/v4/contest/?resource_id__in=1,2,93,102&start__gt=${isoUtc(NOW - SNAPSHOT_LOOKBACK_MS).slice(0, 19)}&order_by=start&limit=100`,
     );
     expect(calls.clist[0]!.init?.headers).toEqual({ Authorization: "ApiKey user:key" });
 
@@ -95,6 +95,33 @@ describe("ensureSnapshot: Codeforces fallback", () => {
     expect(await getMeta(env.DB, "last_fetch_error")).toBe(`clist: ${httpFailure(500)}`);
     expect(result.error).toContain("clist HTTP 500");
     expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("clist HTTP 500"));
+  });
+
+  it("keeps contests that started within the lookback, from Codeforces and from the previous snapshot", async () => {
+    const recentStart = NOW - SNAPSHOT_LOOKBACK_MS + 60 * MIN;
+    const oldStart = NOW - SNAPSHOT_LOOKBACK_MS - 60 * MIN;
+    const recentStarters = { ...fixtureContests.find((c) => c.resource_id === 2)!, start: isoUtc(recentStart).slice(0, 19), href: "https://www.codechef.com/RECENT1" };
+    const oldStarters = { ...recentStarters, start: isoUtc(oldStart).slice(0, 19), href: "https://www.codechef.com/OLD1" };
+    const { fetcher: first } = mockFetch({ clist: () => jsonResponse({ objects: [...fixtureContests, recentStarters, oldStarters] }) });
+    await ensureSnapshot(env, NOW - 2 * SNAPSHOT_TTL_MS, first);
+
+    const { fetcher } = mockFetch({
+      clist: () => new Response("x", { status: 500 }),
+      codeforces: () =>
+        jsonResponse({
+          status: "OK",
+          result: [
+            { id: 9003, name: "Codeforces Round 9003 (Div. 2)", phase: "FINISHED", durationSeconds: 7200, startTimeSeconds: Math.floor(recentStart / 1000) },
+            { id: 9002, name: "Codeforces Round 9002 (Div. 2)", phase: "FINISHED", durationSeconds: 7200, startTimeSeconds: Math.floor(oldStart / 1000) },
+          ],
+        }),
+    });
+    const result = await ensureSnapshot(env, NOW, fetcher);
+    const hrefs = result.contests.map((c) => c.href);
+    expect(hrefs).toContain("https://codeforces.com/contests/9003");
+    expect(hrefs).not.toContain("https://codeforces.com/contests/9002");
+    expect(hrefs).toContain("https://www.codechef.com/RECENT1");
+    expect(hrefs).not.toContain("https://www.codechef.com/OLD1");
   });
 
   it("falls back when clist returns an empty list", async () => {

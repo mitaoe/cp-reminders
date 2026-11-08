@@ -14,10 +14,12 @@ export interface SnapshotResult {
 }
 
 export const SNAPSHOT_TTL_MS = 60 * 60_000;
+export const SNAPSHOT_LOOKBACK_MS = 24 * 60 * 60_000;
 const REQUEST_TIMEOUT_MS = 8_000;
 
 const isoNoZ = (ms: number) => isoUtc(ms).slice(0, 19);
 const byStart = (a: Contest, b: Contest) => a.start.localeCompare(b.start);
+const inLookback = (startMs: number, nowMs: number) => startMs > nowMs - SNAPSHOT_LOOKBACK_MS;
 
 interface CodeforcesContest {
   id: number;
@@ -37,7 +39,7 @@ async function fetchClist(env: Env, nowMs: number, fetcher: Fetcher): Promise<Co
   const ids = Object.keys(PLATFORM).join(",");
   const url =
     `https://clist.by/api/v4/contest/?resource_id__in=${ids}` +
-    `&start__gt=${isoNoZ(nowMs)}&order_by=start&limit=100`;
+    `&start__gt=${isoNoZ(nowMs - SNAPSHOT_LOOKBACK_MS)}&order_by=start&limit=100`;
   const res = await fetcher(url, {
     headers: { Authorization: `ApiKey ${env.CLIST_USERNAME}:${env.CLIST_API_KEY}` },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -56,7 +58,7 @@ async function fetchClist(env: Env, nowMs: number, fetcher: Fetcher): Promise<Co
   return contests;
 }
 
-async function fetchCodeforces(fetcher: Fetcher): Promise<Contest[]> {
+async function fetchCodeforces(nowMs: number, fetcher: Fetcher): Promise<Contest[]> {
   const res = await fetcher("https://codeforces.com/api/contest.list?gym=false", {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
@@ -67,7 +69,7 @@ async function fetchCodeforces(fetcher: Fetcher): Promise<Contest[]> {
   }
   const contests: Contest[] = [];
   for (const c of body.result) {
-    if (c.phase !== "BEFORE" || c.startTimeSeconds === undefined) continue;
+    if (c.startTimeSeconds === undefined || !inLookback(c.startTimeSeconds * 1000, nowMs)) continue;
     contests.push({
       resource_id: 1,
       event: c.name,
@@ -76,7 +78,7 @@ async function fetchCodeforces(fetcher: Fetcher): Promise<Contest[]> {
       href: `https://codeforces.com/contests/${c.id}`,
     });
   }
-  if (contests.length === 0) throw new UpstreamError(FAILURE.empty, "codeforces returned no upcoming contests");
+  if (contests.length === 0) throw new UpstreamError(FAILURE.empty, "codeforces returned no contests");
   return contests.sort(byStart);
 }
 
@@ -120,9 +122,9 @@ export async function ensureSnapshot(env: Env, nowMs: number, fetcher: Fetcher):
     return { contests: clist.contests, fetched: true };
   }
 
-  const codeforces = await attempt("codeforces", () => fetchCodeforces(fetcher));
+  const codeforces = await attempt("codeforces", () => fetchCodeforces(nowMs, fetcher));
   if ("contests" in codeforces) {
-    const others = previous.filter((c) => c.resource_id !== 1 && utcMs(c.start) > nowMs);
+    const others = previous.filter((c) => c.resource_id !== 1 && inLookback(utcMs(c.start), nowMs));
     const contests = [...codeforces.contests, ...others].sort(byStart);
     await saveSnapshot(env, nowMs, "codeforces", contests, clist.failure.code);
     return { contests, fetched: true, error: clist.failure.detail };

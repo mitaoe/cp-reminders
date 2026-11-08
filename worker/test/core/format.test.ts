@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { baseOverrides, rules, tipRules } from "../../src/config.ts";
 import { type Contest, type Tip, contestLink, contestName, formatDuration, formatReminder, formatTime } from "../../src/core/format.ts";
-import { type Rules, dueReminders, reminderKey, selectContests } from "../../src/core/select.ts";
+import { type Rules, reminderKey, selectContests } from "../../src/core/select.ts";
 import { MAX_NAME_LENGTH, isSafeText, isValidTip } from "../../src/core/text.ts";
 import contractTexts from "../../../testdata/reminders.json" with { type: "json" };
 import { EDGE_CASES, renderContract } from "../contract.ts";
@@ -325,16 +325,6 @@ test("sponsored AtCoder names are normalised (full-width and ASCII parens)", () 
     const c = past.find((x) => x.event.startsWith(prefix))!;
     expect(formatReminder(c)).toMatch(new RegExp(`Contest Name: ${want}\\n`));
   }
-});
-
-test("due window: from leadMinutes before the start until minLeadMinutes before it", () => {
-  const c = byEvent("Starters 264");
-  const start = Date.parse(c.start + "Z");
-  const at = (minBefore: number) => start - minBefore * 60_000;
-  expect(dueReminders([c], TEST_RULES, at(TEST_RULES.leadMinutes) - 1000)).toHaveLength(0);
-  expect(dueReminders([c], TEST_RULES, at(TEST_RULES.leadMinutes))).toHaveLength(1);
-  expect(dueReminders([c], TEST_RULES, at(TEST_RULES.minLeadMinutes))).toHaveLength(1);
-  expect(dueReminders([c], TEST_RULES, at(TEST_RULES.minLeadMinutes) + 1000)).toHaveLength(0);
 });
 
 test("reminder key identifies the contest, whatever its source or start time", () => {
