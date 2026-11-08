@@ -111,12 +111,14 @@ function pickTip(c: Contest, tips: readonly Tip[], overrides: TipOverrides = {})
   return tip?.texts.length ? tip.texts[fnv1a(c.href) % tip.texts.length] : undefined;
 }
 
+export const HEADER = "🚨 Contest Reminder 🚨";
+
 export function formatReminder(c: Contest, tips: readonly Tip[] = [], overrides: TipOverrides = {}): string {
   const platform = PLATFORM[c.resource_id];
   if (!platform) throw new Error(`unknown resource_id ${c.resource_id}`);
   const { h, m } = istClock(utcMs(c.start));
   const lines = [
-    "🚨 Contest Reminder 🚨",
+    HEADER,
     "",
     `📍 Platform: ${platform}`,
     `🏆 Contest Name: ${displayName(c)}`,

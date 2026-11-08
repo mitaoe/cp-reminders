@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_TIP_LENGTH } from "../src/admin.ts";
+import { MAX_TIP_LENGTH } from "../src/core/tip.ts";
 import { baseOverrides, rules, tipRules } from "../src/config.ts";
 import { formatReminder, formatTime, isoUtc, istClock } from "../src/core/format.ts";
 import { PREVIEW_LIMIT } from "../src/preview.ts";
@@ -53,6 +53,10 @@ describe("PUT /tips", () => {
     expect((await tipRow(HREF))?.tip).toBe("hydrate");
   });
 
+  it("accepts punctuation that is not a link", async () => {
+    expect((await request("PUT", "/tips", { href: HREF, tip: "e.g. read all problems first... then A." })).status).toBe(200);
+  });
+
   it("stores an empty tip to suppress the tip for that contest", async () => {
     expect((await request("PUT", "/tips", { href: HREF, tip: "" })).status).toBe(200);
     expect((await tipRow(HREF))?.tip).toBe("");
@@ -65,6 +69,12 @@ describe("PUT /tips", () => {
     ["missing tip", { href: HREF }],
     ["non-string tip", { href: HREF, tip: 4 }],
     ["oversized tip", { href: HREF, tip: "x".repeat(MAX_TIP_LENGTH + 1) }],
+    ["tip with a line break", { href: HREF, tip: "first line\nsecond line" }],
+    ["tip with a carriage return", { href: HREF, tip: "first line\rsecond line" }],
+    ["tip with a unicode line separator", { href: HREF, tip: `first line${String.fromCodePoint(0x2028)}second line` }],
+    ["tip with a link", { href: HREF, tip: "see https://example.com/x" }],
+    ["tip with a link to an allowed host", { href: HREF, tip: "see https://codeforces.com/blog" }],
+    ["tip with a bare domain", { href: HREF, tip: "join evil.com today" }],
   ])("rejects %s with 400", async (_name, body) => {
     expect((await request("PUT", "/tips", body)).status).toBe(400);
     expect(await tipRow(HREF)).toBeNull();

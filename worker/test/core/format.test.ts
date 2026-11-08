@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { baseOverrides, rules, tipRules } from "../../src/config.ts";
-import { type Contest, type Tip, formatDuration, formatReminder, formatTime } from "../../src/core/format.ts";
+import { type Contest, HEADER, type Tip, formatDuration, formatReminder, formatTime } from "../../src/core/format.ts";
 import { type Rules, dueReminders, reminderKey, selectContests } from "../../src/core/select.ts";
+import { isValidTip } from "../../src/core/tip.ts";
 import clistHistory from "../fixtures/clist-history.json" with { type: "json" };
 import clistUpcoming from "../fixtures/clist-upcoming.json" with { type: "json" };
 import history from "../fixtures/history.json" with { type: "json" };
@@ -120,6 +121,35 @@ test("template: the bot's text equals the community's latest post for the same c
   const contest = selectContests(all, rules).find((c) => norm(c.href) === norm(field(latest.text, "Contest Link")!))!;
   const withoutTip = (s: string) => s.replace(/\n\n📌 Tip: .*$/, "");
   expect(withoutTip(formatReminder(contest, tipRules, baseOverrides))).toBe(withoutTip(latest.text));
+});
+
+describe("contract with the sender, which posts only texts of this shape", () => {
+  const SENDER_HOSTS = new Set(["codeforces.com", "codechef.com", "leetcode.com", "atcoder.jp"]);
+  const SCHEME_LINK = /\b[a-z][a-z0-9+.-]*:\/\/\S*/giu;
+  const BARE_DOMAIN = /[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}/iu;
+  const problems = (text: string) => {
+    const found: string[] = [];
+    if (text.split("\n")[0] !== HEADER) found.push("header");
+    for (const link of text.match(SCHEME_LINK) ?? []) {
+      const url = new URL(link);
+      if (url.protocol !== "https:" || url.username || !SENDER_HOSTS.has(url.hostname.replace(/^www\./, ""))) found.push(link);
+    }
+    const bare = text.replace(SCHEME_LINK, " ").match(BARE_DOMAIN);
+    if (bare) found.push(bare[0]);
+    return found;
+  };
+
+  test("every reminder for the contests of August 2025 to November 2026 passes the sender's checks", () => {
+    const rejected = selectContests(all, rules)
+      .map((c) => ({ href: c.href, found: problems(formatReminder(c, tipRules, baseOverrides)) }))
+      .filter((r) => r.found.length > 0);
+    expect(rejected).toEqual([]);
+  });
+
+  test("every configured tip is one line without a link, within the length limit", () => {
+    const tips = [...tipRules.flatMap((t) => t.texts), ...Object.values(baseOverrides).filter((t) => t !== "")];
+    expect(tips.filter((t) => !isValidTip(t))).toEqual([]);
+  });
 });
 
 test("time and duration helpers", () => {

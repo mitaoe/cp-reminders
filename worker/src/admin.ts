@@ -1,10 +1,10 @@
 import { isoUtc } from "./core/format.ts";
+import { MAX_TIP_LENGTH, isValidTip } from "./core/tip.ts";
 import { badRequest, isRecord, json, readJson, text } from "./http.ts";
 import { renderPreview } from "./preview.ts";
 import type { Route } from "./router.ts";
 
 export const MAX_HREF_LENGTH = 500;
-export const MAX_TIP_LENGTH = 500;
 
 function parseHref(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length === 0 || value.length > MAX_HREF_LENGTH) return undefined;
@@ -33,8 +33,8 @@ export const adminRoutes: Route[] = [
       const href = parseHref(body.href);
       if (href === undefined) return badRequest("href must be an http(s) URL");
       const { tip } = body;
-      if (typeof tip !== "string" || tip.length > MAX_TIP_LENGTH) {
-        return badRequest(`tip must be a string up to ${MAX_TIP_LENGTH} characters`);
+      if (typeof tip !== "string" || !isValidTip(tip)) {
+        return badRequest(`tip must be one line of up to ${MAX_TIP_LENGTH} characters without links`);
       }
       await env.DB
         .prepare(
