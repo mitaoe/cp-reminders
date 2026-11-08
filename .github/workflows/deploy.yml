@@ -54,10 +54,42 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
+          check-latest: true
           package-manager-cache: false
       - name: Install pnpm
         working-directory: .
-        run: npm install --global "pnpm@$(node -p 'require("./package.json").packageManager.split("@")[1]')"
+        run: |
+          set -euo pipefail
+          [[ "$RUNNER_OS" == Linux && "$RUNNER_ARCH" == X64 ]] || { echo "pnpm is set up for Linux x64 runners only"; exit 1; }
+          pm=$(node -p 'require("./package.json").packageManager ?? ""')
+          [[ "$pm" =~ ^pnpm@([0-9]+\.[0-9]+\.[0-9]+)$ ]] || { echo "packageManager must be pnpm@x.y.z"; exit 1; }
+          version="${BASH_REMATCH[1]}"
+          [[ "$(node -p 'require("./package.json").devEngines?.packageManager === undefined')" == true ]] || { echo "devEngines.packageManager is not supported; packageManager selects pnpm"; exit 1; }
+          integrity() {
+            awk '/^---$/ { n++; next } n == 1' pnpm-lock.yaml \
+              | grep -A1 -F -x -e "  $1:" -e "  '$1':" \
+              | sed -n 's/^    resolution: {integrity: \(sha512-[A-Za-z0-9+/=]*\)}$/\1/p' \
+              | head -n 1
+          }
+          fetch() {
+            local want got
+            want=$(integrity "$1")
+            [[ -n "$want" ]] || { echo "pnpm-lock.yaml has no integrity for $1"; exit 1; }
+            curl -fsSL --retry 3 -o "$3" "$2"
+            got="sha512-$(openssl dgst -sha512 -binary "$3" | base64 -w0)"
+            [[ "$got" == "$want" ]] || { echo "integrity mismatch for $1"; exit 1; }
+          }
+          dir="$RUNNER_TEMP/pnpm"
+          mkdir -p "$dir/exe"
+          fetch "pnpm@$version" "https://registry.npmjs.org/pnpm/-/pnpm-$version.tgz" "$dir/pnpm.tgz"
+          fetch "@pnpm/exe.linux-x64@$version" "https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-$version.tgz" "$dir/exe.tgz"
+          tar -xzf "$dir/pnpm.tgz" -C "$dir"
+          tar -xzf "$dir/exe.tgz" -C "$dir/exe"
+          for name in pnpm pn pnpx pnx; do
+            install -m 0755 "$dir/exe/package/pnpm" "$dir/package/$name"
+          done
+          [[ "$("$dir/package/pnpm" --version)" == "$version" ]] || { echo "pnpm reports a different version"; exit 1; }
+          echo "$dir/package" >> "$GITHUB_PATH"
       - name: Install dependencies
         working-directory: .
         run: pnpm install --frozen-lockfile
