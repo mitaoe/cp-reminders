@@ -39,7 +39,11 @@ func dial(ctx context.Context, dir string, v *state.Vault, log waLog.Logger, con
 
 func (c *conn) Close() error {
 	c.cli.Disconnect()
-	return c.sess.Commit()
+	return c.sess.Save()
+}
+
+func (c *conn) Release() error {
+	return c.sess.Discard()
 }
 
 func (c *conn) Group(ctx context.Context, jid string) (drain.Group, error) {

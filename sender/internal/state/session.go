@@ -21,6 +21,7 @@ const SessionFile = "session.db.age"
 const (
 	workDirPattern = "cp-reminders-wa-*"
 	plainDBName    = "session.db"
+	snapshotName   = "snapshot.db"
 	sqlitePragmas  = "?_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)&_pragma=journal_mode(DELETE)"
 )
 
@@ -45,6 +46,7 @@ const (
 // Exactly one of Commit or Discard must be called to remove the plaintext.
 type Session struct {
 	Container *sqlstore.Container
+	db        *sql.DB
 	dir       string
 	vault     *Vault
 	workDir   string
@@ -100,7 +102,7 @@ func openWork(ctx context.Context, dir string, v *Vault, log waLog.Logger, resto
 		container.Close()
 		return nil, fmt.Errorf("upgrade whatsmeow store: %w", err)
 	}
-	return &Session{Container: container, dir: dir, vault: v, workDir: work}, nil
+	return &Session{Container: container, db: db, dir: dir, vault: v, workDir: work}, nil
 }
 
 // PairedDevice returns the session's device, or ErrNotPaired.
@@ -115,7 +117,27 @@ func (s *Session) PairedDevice(ctx context.Context) (*store.Device, error) {
 	return dev, nil
 }
 
-// Commit closes the store, encrypts it into the state directory and removes the plaintext.
+// Save encrypts a consistent snapshot of the store into the state directory.
+// The store stays open, so work still running against it does not fail.
+func (s *Session) Save() error {
+	if s.status != sessionOpen {
+		return errSessionDiscarded
+	}
+	snapshot := filepath.Join(s.workDir, snapshotName)
+	if err := os.Remove(snapshot); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("save session: %w", err)
+	}
+	if _, err := s.db.ExecContext(context.Background(), "VACUUM INTO ?", snapshot); err != nil {
+		return fmt.Errorf("save session: snapshot: %w", err)
+	}
+	sealErr := s.vault.Seal(filepath.Join(s.dir, SessionFile), snapshot)
+	if err := errors.Join(sealErr, os.Remove(snapshot)); err != nil {
+		return fmt.Errorf("save session: %w", err)
+	}
+	return nil
+}
+
+// Commit saves the store into the state directory, closes it and removes the plaintext.
 // Calling it again after success is a no-op.
 func (s *Session) Commit() error {
 	switch s.status {
@@ -124,18 +146,18 @@ func (s *Session) Commit() error {
 	case sessionDiscarded:
 		return errSessionDiscarded
 	}
+	saveErr := s.Save()
 	s.status = sessionCommitted
 	closeErr := s.Container.Close()
-	sealErr := s.vault.Seal(filepath.Join(s.dir, SessionFile), filepath.Join(s.workDir, plainDBName))
 	removeErr := os.RemoveAll(s.workDir)
-	if err := errors.Join(closeErr, sealErr, removeErr); err != nil {
+	if err := errors.Join(saveErr, closeErr, removeErr); err != nil {
 		return fmt.Errorf("commit session: %w", err)
 	}
 	return nil
 }
 
-// Discard closes the store and removes the plaintext without saving.
-// It is a no-op after Commit or Discard.
+// Discard closes the store and removes the plaintext without saving; the state
+// directory keeps what Save last wrote. It is a no-op after Commit or Discard.
 func (s *Session) Discard() error {
 	if s.status != sessionOpen {
 		return nil

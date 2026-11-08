@@ -32,7 +32,7 @@ func runGroups(ctx context.Context, args []string, getenv func(string) string, o
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, c.Close()) }()
+	defer func() { err = errors.Join(err, c.Close(), c.Release()) }()
 
 	groups, err := c.cli.GetJoinedGroups(ctx)
 	if err != nil {

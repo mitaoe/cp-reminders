@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,8 +18,30 @@ func runDrain(ctx context.Context, args []string, getenv func(string) string, ou
 	if err != nil {
 		return err
 	}
+	return runDrainer(ctx, d, timeout)
+}
+
+type releaser interface {
+	Release() error
+}
+
+func runDrainer(ctx context.Context, d *drain.Drainer, timeout time.Duration) (err error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	var opened []releaser
+	defer func() {
+		for _, r := range opened {
+			err = errors.Join(err, r.Release())
+		}
+	}()
+	dial := d.Dial
+	d.Dial = func(ctx context.Context) (drain.Session, error) {
+		s, err := dial(ctx)
+		if r, ok := s.(releaser); ok {
+			opened = append(opened, r)
+		}
+		return s, err
+	}
 	return d.Run(ctx)
 }
 

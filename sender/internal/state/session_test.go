@@ -70,6 +70,74 @@ func TestSessionCommitEncryptsAndReopens(t *testing.T) {
 	}
 }
 
+func TestSessionSaveSealsASnapshotAndKeepsTheStoreOpen(t *testing.T) {
+	ctx := context.Background()
+	v := newTestVault(t)
+	dir := t.TempDir()
+
+	s, err := CreateSession(ctx, dir, v, nil)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	work := s.workDir
+	dev := s.Container.NewDevice()
+	jid := types.NewJID("919999999999", types.DefaultUserServer)
+	jid.Device = 7
+	dev.ID = &jid
+	dev.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte{1},
+		AccountSignature:    make([]byte, 64),
+		AccountSignatureKey: make([]byte, 32),
+		DeviceSignature:     make([]byte, 64),
+	}
+	dev.PushName = "saved"
+	if err := s.Container.PutDevice(ctx, dev); err != nil {
+		t.Fatalf("PutDevice: %v", err)
+	}
+	if err := s.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	assertOnlyFiles(t, dir, SessionFile)
+
+	dev.PushName = "after save"
+	if err := s.Container.PutDevice(ctx, dev); err != nil {
+		t.Fatalf("PutDevice after Save: %v", err)
+	}
+	if err := s.Discard(); err != nil {
+		t.Fatalf("Discard: %v", err)
+	}
+	if _, err := os.Stat(work); !os.IsNotExist(err) {
+		t.Errorf("plaintext work dir still exists after Discard: %v", err)
+	}
+	assertOnlyFiles(t, dir, SessionFile)
+
+	s2, err := OpenSession(ctx, dir, v, nil)
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	defer s2.Discard()
+	got, err := s2.PairedDevice(ctx)
+	if err != nil {
+		t.Fatalf("PairedDevice: %v", err)
+	}
+	if got.PushName != "saved" {
+		t.Errorf("reopened device: got push name %q, want the saved snapshot's", got.PushName)
+	}
+}
+
+func TestSessionSaveAfterDiscardFails(t *testing.T) {
+	s, err := CreateSession(context.Background(), t.TempDir(), newTestVault(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Discard(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(); err == nil {
+		t.Error("Save after Discard should fail")
+	}
+}
+
 func TestSessionDiscardWritesNothing(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

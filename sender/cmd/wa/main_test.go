@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	signallog "go.mau.fi/libsignal/logger"
 	"go.mau.fi/whatsmeow/types"
@@ -226,6 +227,53 @@ func TestDrainRefusesNonAnnouncementsTarget(t *testing.T) {
 	}
 	if len(sess.sent) != 0 {
 		t.Errorf("sent to a non-announcements group: %v", sess.sent)
+	}
+}
+
+type releasingSession struct {
+	groupOnlySession
+	worker        *fakeWorker
+	released      bool
+	acksAtRelease int
+}
+
+func (s *releasingSession) Release() error {
+	s.worker.mu.Lock()
+	defer s.worker.mu.Unlock()
+	s.released = true
+	s.acksAtRelease = len(s.worker.acks)
+	return nil
+}
+
+func TestDrainReleasesTheSessionAfterTheAck(t *testing.T) {
+	f := newFakeWorker(t, outbox.Item{Key: "k1", Text: "hi", StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"})
+	d, _, err := newDrainer([]string{"--state", t.TempDir(), "--jitter", "0s"}, f.env(t, nil), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := &releasingSession{groupOnlySession: groupOnlySession{group: drain.Group{IsAnnouncements: true, IsAdmin: true}}, worker: f}
+	d.Dial = func(context.Context) (drain.Session, error) { return sess, nil }
+	if err := runDrainer(context.Background(), d, time.Minute); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if !sess.released || sess.acksAtRelease != 1 {
+		t.Errorf("released=%v with %d ack(s) received, want released after the ack", sess.released, sess.acksAtRelease)
+	}
+}
+
+func TestDrainReleasesTheSessionWhenTheRunFails(t *testing.T) {
+	f := newFakeWorker(t, outbox.Item{Key: "k1", Text: "hi", StartUTC: "2026-11-07T14:35:00Z", DeadlineUTC: "2026-11-07T14:25:00Z"})
+	d, _, err := newDrainer([]string{"--state", t.TempDir(), "--jitter", "0s"}, f.env(t, nil), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := &releasingSession{groupOnlySession: groupOnlySession{group: drain.Group{IsAdmin: true}}, worker: f}
+	d.Dial = func(context.Context) (drain.Session, error) { return sess, nil }
+	if err := runDrainer(context.Background(), d, time.Minute); !errors.Is(err, drain.ErrNotAnnouncements) {
+		t.Fatalf("drain: got %v, want ErrNotAnnouncements", err)
+	}
+	if !sess.released {
+		t.Error("session not released after a failed run")
 	}
 }
 
