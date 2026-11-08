@@ -1,4 +1,4 @@
-name: send
+name: Send Reminders
 
 on:
   workflow_dispatch:
@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   drain:
+    name: Drain Outbox
     if: vars.BOT_DEPLOYMENT == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 6
