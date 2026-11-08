@@ -77,17 +77,20 @@ describe("POST /outbox/ack", () => {
   it("applies results and reports how many were applied", async () => {
     await claimed("a");
     await claimed("b");
+    await claimed("c");
     const res = await post("/outbox/ack", {
       claimId: "run-1",
       results: [
         { key: "a", status: "sent", messageId: "WAMID.1" },
         { key: "b", status: "failed", error: "closed" },
+        { key: "c", status: "rejected", error: "text is not in the reminder layout" },
       ],
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ applied: 2 });
+    expect(await res.json()).toEqual({ applied: 3 });
     expect(await getReminder("a")).toMatchObject({ status: "sent", message_id: "WAMID.1" });
     expect(await getReminder("b")).toMatchObject({ status: MAX_ATTEMPTS > 1 ? "queued" : "failed", last_error: "closed" });
+    expect(await getReminder("c")).toMatchObject({ status: "failed", last_error: "text is not in the reminder layout" });
   });
 
   it("ignores an ack for a different claimId", async () => {

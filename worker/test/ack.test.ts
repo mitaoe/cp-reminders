@@ -46,6 +46,26 @@ describe("ackReminders", () => {
     expect(await claimReminders(env, "c2", NOW)).toEqual([]);
   });
 
+  it("marks a rejected reminder failed at once, whatever attempts remain", async () => {
+    await claimed("a", 1);
+    const applied = await ackReminders(env, "c1", [{ key: "a", status: "rejected", error: "text is not in the reminder layout" }], NOW);
+    expect(applied).toBe(1);
+    expect(await getReminder("a")).toMatchObject({
+      status: "failed",
+      claim_id: "c1",
+      last_error: "text is not in the reminder layout",
+      attempts: 1,
+      updated_at: isoUtc(NOW),
+    });
+    expect(await claimReminders(env, "c2", NOW + LEASE_MS + MIN)).toEqual([]);
+  });
+
+  it("ignores a rejection carrying a different claimId", async () => {
+    await claimed("a", 1, "owner");
+    expect(await ackReminders(env, "intruder", [{ key: "a", status: "rejected", error: "x" }], NOW)).toBe(0);
+    expect(await getReminder("a")).toMatchObject({ status: "claimed", claim_id: "owner" });
+  });
+
   it("ignores an ack carrying a different claimId", async () => {
     await claimed("a", 1, "owner");
     const applied = await ackReminders(env, "intruder", [{ key: "a", status: "sent", messageId: "x" }], NOW);

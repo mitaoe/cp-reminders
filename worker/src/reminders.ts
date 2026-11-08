@@ -59,9 +59,11 @@ export async function claimReminders(env: Env, claimId: string, nowMs: number): 
     .map((r) => ({ key: r.key, text: r.text, startUtc: r.start_utc, deadlineUtc: r.deadline_utc }));
 }
 
+export const ACK_STATUSES = ["sent", "failed", "rejected"] as const;
+
 export interface AckResult {
   key: string;
-  status: "sent" | "failed";
+  status: (typeof ACK_STATUSES)[number];
   messageId?: string;
   error?: string;
 }
@@ -69,25 +71,36 @@ export interface AckResult {
 export const MAX_ERROR_LENGTH = 500;
 const MAX_MESSAGE_ID_LENGTH = 200;
 
+const errorText = (r: AckResult): string => (r.error ?? "unknown error").slice(0, MAX_ERROR_LENGTH);
+
 function ackStatement(db: D1Database, claimId: string, r: AckResult, now: string): D1PreparedStatement {
-  if (r.status === "sent") {
-    return db
-      .prepare(
-        "UPDATE reminders SET status = 'sent', message_id = ?3, sent_at = ?4, updated_at = ?4, last_error = NULL " +
-          "WHERE key = ?1 AND claim_id = ?2 AND status IN ('claimed', 'expired')",
-      )
-      .bind(r.key, claimId, (r.messageId ?? "").slice(0, MAX_MESSAGE_ID_LENGTH) || null, now);
+  switch (r.status) {
+    case "sent":
+      return db
+        .prepare(
+          "UPDATE reminders SET status = 'sent', message_id = ?3, sent_at = ?4, updated_at = ?4, last_error = NULL " +
+            "WHERE key = ?1 AND claim_id = ?2 AND status IN ('claimed', 'expired')",
+        )
+        .bind(r.key, claimId, (r.messageId ?? "").slice(0, MAX_MESSAGE_ID_LENGTH) || null, now);
+    case "failed":
+      return db
+        .prepare(
+          "UPDATE reminders SET " +
+            "status = CASE WHEN attempts >= ?5 THEN 'failed' ELSE 'queued' END, " +
+            "claim_id = CASE WHEN attempts >= ?5 THEN claim_id ELSE NULL END, " +
+            "claimed_at = CASE WHEN attempts >= ?5 THEN claimed_at ELSE NULL END, " +
+            "last_error = ?3, updated_at = ?4 " +
+            "WHERE key = ?1 AND claim_id = ?2 AND status = 'claimed'",
+        )
+        .bind(r.key, claimId, errorText(r), now, MAX_ATTEMPTS);
+    case "rejected":
+      return db
+        .prepare(
+          "UPDATE reminders SET status = 'failed', last_error = ?3, updated_at = ?4 " +
+            "WHERE key = ?1 AND claim_id = ?2 AND status = 'claimed'",
+        )
+        .bind(r.key, claimId, errorText(r), now);
   }
-  return db
-    .prepare(
-      "UPDATE reminders SET " +
-        "status = CASE WHEN attempts >= ?5 THEN 'failed' ELSE 'queued' END, " +
-        "claim_id = CASE WHEN attempts >= ?5 THEN claim_id ELSE NULL END, " +
-        "claimed_at = CASE WHEN attempts >= ?5 THEN claimed_at ELSE NULL END, " +
-        "last_error = ?3, updated_at = ?4 " +
-        "WHERE key = ?1 AND claim_id = ?2 AND status = 'claimed'",
-    )
-    .bind(r.key, claimId, (r.error ?? "unknown error").slice(0, MAX_ERROR_LENGTH), now, MAX_ATTEMPTS);
 }
 
 export async function ackReminders(env: Env, claimId: string, results: AckResult[], nowMs: number): Promise<number> {

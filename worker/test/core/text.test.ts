@@ -21,14 +21,16 @@ describe("isSafeText agrees with the shared cases in testdata/free-text.json", (
 });
 
 describe("isValidTip", () => {
-  test("accepts safe text up to the length limit, and the empty tip", () => {
+  test("accepts safe text up to the length limit in code points, and the empty tip", () => {
     expect(isValidTip("wake up, code, then chai")).toBe(true);
     expect(isValidTip("x".repeat(MAX_TIP_LENGTH))).toBe(true);
+    expect(isValidTip(ch(0x1f525).repeat(MAX_TIP_LENGTH))).toBe(true);
     expect(isValidTip("")).toBe(true);
   });
 
   test.each([
     ["too long", "x".repeat(MAX_TIP_LENGTH + 1)],
+    ["too long in code points", ch(0x1f525).repeat(MAX_TIP_LENGTH + 1)],
     ["only spaces", "   "],
     ["unsafe", "join evil.com"],
   ])("refuses a tip that is %s", (_name, tip) => {
@@ -41,16 +43,17 @@ describe("defuseLinks", () => {
     expect(defuseLinks("Refact.ai Match 1 (Codeforces Round 985)")).toBe(`Refact${ch(0x2024)}ai Match 1 (Codeforces Round 985)`);
     expect(defuseLinks("based on St.Petersburg Olympiad")).toBe(`based on St${ch(0x2024)}Petersburg Olympiad`);
     expect(defuseLinks("mirror at 203.0.113.5")).toBe(`mirror at 203${ch(0x2024)}0${ch(0x2024)}113${ch(0x2024)}5`);
+    expect(defuseLinks(`evil${ch(0x3002)}com and evil${ch(0xfe52)}net`)).toBe(`evil${ch(0x2024)}com and evil${ch(0x2024)}net`);
   });
 
-  test("makes every unsafe domain or address safe", () => {
-    for (const text of ["Refact.ai and evil.co.uk", `evil${ch(0xff0e)}com`, "203.0.113.5"]) {
+  test("makes every domain or address in the shared unsafe cases safe", () => {
+    for (const text of ["Refact.ai and evil.co.uk", "join evil.कॉम", "a@evil.ලංකා", `evil${ch(0xff0e)}com`, "1.2.3.4.5.6.7"]) {
       expect(isSafeText(defuseLinks(text))).toBe(true);
     }
   });
 
   test("leaves other punctuation alone", () => {
-    for (const name of ["Codeforces Round 1134 (Div. 4)", "Educational Codeforces Round 190 (Rated for Div. 2)", "e.g. Starters 264"]) {
+    for (const name of ["Codeforces Round 1134 (Div. 4)", "Educational Codeforces Round 190 (Rated for Div. 2)", "e.g. Starters 264", "U.S. Open"]) {
       expect(defuseLinks(name)).toBe(name);
     }
   });

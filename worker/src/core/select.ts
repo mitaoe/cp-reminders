@@ -1,4 +1,4 @@
-import { type Contest, PLATFORM, utcMs } from "./format.ts";
+import { type Contest, PLATFORM, contestLink, utcMs } from "./format.ts";
 
 export interface Rules {
   include: Record<string, string[]>;
@@ -18,7 +18,7 @@ function isPureDiv(c: Contest, div: 1 | 2): boolean {
 
 function matchesRules(c: Contest, rules: Rules): boolean {
   const platform = PLATFORM[c.resource_id];
-  if (!platform || c.duration > rules.maxDurationHours * 3600) return false;
+  if (!platform || contestLink(c) === undefined || c.duration > rules.maxDurationHours * 3600) return false;
   const matches = (patterns: string[] | undefined) => (patterns ?? []).some((p) => new RegExp(p, "i").test(c.event));
   return matches(rules.include[platform]) && !matches(rules.exclude?.[platform]);
 }

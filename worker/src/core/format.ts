@@ -1,4 +1,4 @@
-import { defuseLinks } from "./text.ts";
+import { MAX_NAME_LENGTH, codePoints, defuseLinks, isValidName } from "./text.ts";
 
 export interface Contest {
   resource_id: number;
@@ -23,6 +23,8 @@ export const PLATFORM: Readonly<Record<number, string>> = {
   93: "Atcoder",
   102: "LeetCode",
 };
+
+export const MAX_LINK_LENGTH = 200;
 
 export const IST_OFFSET_MS = 330 * 60_000;
 
@@ -56,6 +58,12 @@ export function formatDuration(seconds: number): string {
   return m === 0 ? `${h} hours` : `${h}:${String(m).padStart(2, "0")} hours`;
 }
 
+function platformOf(c: Contest): string {
+  const platform = PLATFORM[c.resource_id];
+  if (!platform) throw new Error(`unknown resource_id ${c.resource_id}`);
+  return platform;
+}
+
 const SPONSORED_CODEFORCES = /\((Codeforces Round \d+),\s*([^)]*)\)\s*$/;
 const SPONSORED_ATCODER = /[（(]\s*(AtCoder (?:Beginner|Regular|Grand) Contest\S*\s*\d+)\s*[)）]\s*$/;
 const TRAILING_PARENTHETICAL = /\s*\([^)]*\)\s*$/;
@@ -64,32 +72,47 @@ function displayName(c: Contest): string {
   switch (c.resource_id) {
     case 1: {
       const m = c.event.match(SPONSORED_CODEFORCES);
-      return m ? `${m[1]} (${m[2]})` : c.event.trim();
+      return m ? `${m[1]} (${m[2]})` : c.event;
     }
     case 2:
-      return c.event.replace(TRAILING_PARENTHETICAL, "").trim();
+      return c.event.replace(TRAILING_PARENTHETICAL, "");
     case 93: {
       const m = c.event.match(SPONSORED_ATCODER);
-      return m ? m[1] : c.event.trim();
+      return m ? m[1] : c.event;
     }
     default:
-      return c.event.trim();
+      return c.event;
   }
 }
 
-const CODEFORCES_CONTEST_LINK = /^https:\/\/codeforces\.com\/contests?\/(\d+)\/?$/;
+const FORMAT_CHARACTERS = /\p{Cf}/gu;
+const NOT_GRAPHIC_OR_SPACE = /[^\p{L}\p{M}\p{N}\p{P}\p{S}]+/gu;
+const ELLIPSIS = "…";
 
-function displayLink(c: Contest): string {
-  switch (c.resource_id) {
-    case 1: {
-      const m = c.href.match(CODEFORCES_CONTEST_LINK);
-      return m ? `https://codeforces.com/contests/${m[1]}` : c.href;
-    }
-    case 102:
-      return c.href.endsWith("/") ? c.href : `${c.href}/`;
-    default:
-      return c.href;
-  }
+function shorten(name: string): string {
+  const points = [...name];
+  return points.length <= MAX_NAME_LENGTH ? name : `${points.slice(0, MAX_NAME_LENGTH - 1).join("").trimEnd()}${ELLIPSIS}`;
+}
+
+export function contestName(c: Contest): string {
+  const cleaned = displayName(c).replace(FORMAT_CHARACTERS, "").replace(NOT_GRAPHIC_OR_SPACE, " ").trim();
+  const name = shorten(defuseLinks(cleaned));
+  return isValidName(name) ? name : `${platformOf(c)} contest`;
+}
+
+const LINKS: Readonly<Record<number, { shape: RegExp; link: (id: string) => string }>> = {
+  1: { shape: /^https:\/\/codeforces\.com\/contests?\/([0-9]+)\/?$/, link: (id) => `https://codeforces.com/contests/${id}` },
+  2: { shape: /^https:\/\/www\.codechef\.com\/([A-Za-z0-9]+)$/, link: (id) => `https://www.codechef.com/${id}` },
+  93: { shape: /^https:\/\/atcoder\.jp\/contests\/([A-Za-z0-9_-]+)$/, link: (id) => `https://atcoder.jp/contests/${id}` },
+  102: { shape: /^https:\/\/leetcode\.com\/contest\/([a-z0-9-]+)\/?$/, link: (id) => `https://leetcode.com/contest/${id}/` },
+};
+
+export function contestLink(c: Contest): string | undefined {
+  const platform = LINKS[c.resource_id];
+  const id = platform && c.href.match(platform.shape)?.[1];
+  if (!id) return undefined;
+  const link = platform.link(id);
+  return codePoints(link) <= MAX_LINK_LENGTH ? link : undefined;
 }
 
 function fnv1a(s: string): number {
@@ -99,7 +122,7 @@ function fnv1a(s: string): number {
 }
 
 function pickTip(c: Contest, tips: readonly Tip[], overrides: TipOverrides = {}): string | undefined {
-  for (const key of [c.href, displayLink(c)]) {
+  for (const key of [c.href, contestLink(c) ?? c.href]) {
     if (Object.hasOwn(overrides, key)) return overrides[key] || undefined;
   }
   const platform = PLATFORM[c.resource_id];
@@ -116,17 +139,18 @@ function pickTip(c: Contest, tips: readonly Tip[], overrides: TipOverrides = {})
 const HEADER = "🚨 Contest Reminder 🚨";
 
 export function formatReminder(c: Contest, tips: readonly Tip[] = [], overrides: TipOverrides = {}): string {
-  const platform = PLATFORM[c.resource_id];
-  if (!platform) throw new Error(`unknown resource_id ${c.resource_id}`);
+  const platform = platformOf(c);
+  const link = contestLink(c);
+  if (!link) throw new Error(`no ${platform} contest link in ${c.href}`);
   const { h, m } = istClock(utcMs(c.start));
   const lines = [
     HEADER,
     "",
     `📍 Platform: ${platform}`,
-    `🏆 Contest Name: ${defuseLinks(displayName(c))}`,
+    `🏆 Contest Name: ${contestName(c)}`,
     `🕒 Timing: ${formatTime(h, m)}`,
     `⏳ Duration: ${formatDuration(c.duration)}`,
-    `🔗 Contest Link: ${displayLink(c)}`,
+    `🔗 Contest Link: ${link}`,
   ];
   const tip = pickTip(c, tips, overrides);
   if (tip) lines.push("", `📌 Tip: ${tip}`);
