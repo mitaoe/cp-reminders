@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cp-reminders/sender/internal/outbox"
+	"cp-reminders/sender/internal/redact"
 	"cp-reminders/sender/internal/state"
 )
 
@@ -33,7 +34,6 @@ type Outbox interface {
 
 // Group describes the target group as seen by the sender.
 type Group struct {
-	Name            string
 	IsAnnouncements bool
 	IsAdmin         bool
 }
@@ -183,12 +183,12 @@ func (d *Drainer) checkTarget(ctx context.Context, sess Session) error {
 		return fmt.Errorf("look up target group: %w", err)
 	}
 	if !g.IsAnnouncements {
-		return fmt.Errorf("group %q: %w", g.Name, ErrNotAnnouncements)
+		return ErrNotAnnouncements
 	}
 	if !g.IsAdmin {
-		return fmt.Errorf("group %q: %w", g.Name, ErrNotAdmin)
+		return ErrNotAdmin
 	}
-	d.logf("target group %q verified (announcements=%t, admin=%t)", g.Name, g.IsAnnouncements, g.IsAdmin)
+	d.logf("target verified: announcements group, sender is admin")
 	return nil
 }
 
@@ -222,7 +222,7 @@ func (d *Drainer) report(s summary) {
 
 func (d *Drainer) logf(format string, args ...any) {
 	if d.Out != nil {
-		fmt.Fprintf(d.Out, format+"\n", args...)
+		fmt.Fprintln(d.Out, redact.String(fmt.Sprintf(format, args...)))
 	}
 }
 

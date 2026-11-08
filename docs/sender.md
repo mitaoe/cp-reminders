@@ -55,6 +55,16 @@ Any failure (connect, logged out, stream replaced, temporary ban, refused target
 
 Message text appears only in `--dry-run` output and in the failure summary, never in the normal log.
 
+### Public output
+
+Workflow logs and job summaries of the deployment repository are public, so `drain` keeps WhatsApp identities out of them:
+
+- Everything it prints passes through `internal/redact`: whatsmeow's log lines (its logger is wrapped), the sender's own log lines, the error text in the job summary and the final `wa: …` error line. Every WhatsApp ID becomes `<id>@` followed by its server (`<id>@s.whatsapp.net`, `<id>@g.us`, `<id>@lid`), and every standalone run of ten or more digits becomes `<number>`.
+- The target group is reported only as verified or refused, never by name.
+- Reminder texts in the failure summary are printed unchanged, so they can be posted by hand.
+
+`wa groups` and `wa pair` print IDs and phone numbers on purpose; they are run locally, never in a workflow.
+
 ## Pairing
 
 The paired number must be an admin of the community so that it can post in Announcements, and its phone must open WhatsApp at least every 14 days: linked devices are logged out after 14 days without the phone being used ([WhatsApp FAQ](https://faq.whatsapp.com/378279804439436/)).
@@ -107,6 +117,7 @@ Use the candidate whose `community` is the right community and whose line shows 
 | `cmd/wa` | Flags, environment, wiring, the groups table and the pairing prompts. |
 | `internal/drain` | Claim, validate, deliver and acknowledge, and the failure summary. Depends only on the `Outbox`, `Session` and `Ledger` interfaces, so it is tested with fakes. |
 | `internal/outbox` | HTTP client for `/outbox/claim` and `/outbox/ack` with per-request timeouts and acknowledgement retries. |
+| `internal/redact` | Removes WhatsApp IDs and phone numbers from text and from whatsmeow's log lines. |
 | `internal/state` | The age vault, the encrypted session store and the `sent.json` ledger. |
 | `internal/wa` | whatsmeow wrapper: fatal-event watcher, connect and wait, plain text sending, QR and phone pairing, admin check. |
 

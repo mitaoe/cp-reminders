@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"cp-reminders/sender/internal/outbox"
+	"cp-reminders/sender/internal/redact"
 )
 
 type summary struct {
@@ -43,7 +44,7 @@ func writeSummary(w io.Writer, s summary) error {
 		fmt.Fprintf(bw, "### `%s`\n\n", it.Key)
 		fmt.Fprintf(bw, "Contest start %s, deadline %s.", it.StartUTC, it.DeadlineUTC)
 		if r.Error != "" {
-			fmt.Fprintf(bw, " Reason: %s", oneLine(r.Error))
+			fmt.Fprintf(bw, " Reason: %s", redact.String(oneLine(r.Error)))
 		}
 		fence := fenceFor(it.Text)
 		fmt.Fprintf(bw, "\n\n%s\n%s\n%s\n\n", fence, it.Text, fence)
@@ -75,7 +76,7 @@ func errText(err error) string {
 	if err == nil {
 		return ""
 	}
-	return oneLine(err.Error())
+	return redact.String(oneLine(err.Error()))
 }
 
 func oneLine(s string) string {

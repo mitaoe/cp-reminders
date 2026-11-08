@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -217,7 +218,7 @@ func TestDrainRefusesNonAnnouncementsTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sess := &groupOnlySession{group: drain.Group{Name: "General", IsAdmin: true}}
+	sess := &groupOnlySession{group: drain.Group{IsAdmin: true}}
 	d.Dial = func(context.Context) (drain.Session, error) { return sess, nil }
 	if err := d.Run(context.Background()); !errors.Is(err, drain.ErrNotAnnouncements) {
 		t.Fatalf("Run: got %v, want ErrNotAnnouncements", err)
@@ -236,6 +237,38 @@ func TestPairRefusesExistingSessionWithoutForce(t *testing.T) {
 	err := run(context.Background(), []string{"pair", "--state", dir}, env, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("pair: got %v", err)
+	}
+}
+
+func TestErrorLineRedactsWhatsAppIDs(t *testing.T) {
+	got := errorLine(fmt.Errorf("connect: %w", errors.New("stream replaced for 919876543210:5@s.whatsapp.net")))
+	want := "wa: connect: stream replaced for <id>@s.whatsapp.net"
+	if got != want {
+		t.Errorf("errorLine: got %q, want %q", got, want)
+	}
+}
+
+func TestLoggerRedactsWhatsAppIDs(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout := os.Stdout
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = stdout })
+
+	f := newFlags("drain", io.Discard, true)
+	if err := f.parse([]string{"--state", t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	f.logger().Sub("Client").Warnf("retry receipt from %s", "919876543210@s.whatsapp.net")
+	w.Close()
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "[wa/Client WARN] retry receipt from <id>@s.whatsapp.net") || strings.Contains(string(out), "919876543210") {
+		t.Errorf("logger output not redacted: %q", out)
 	}
 }
 

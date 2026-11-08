@@ -52,7 +52,6 @@ func (c *conn) Group(ctx context.Context, jid string) (drain.Group, error) {
 		return drain.Group{}, fmt.Errorf("get group info: %w", err)
 	}
 	return drain.Group{
-		Name:            info.Name,
 		IsAnnouncements: info.IsDefaultSubGroup,
 		IsAdmin:         wa.IsAdmin(info, c.cli.SelfJIDs()...),
 	}, nil

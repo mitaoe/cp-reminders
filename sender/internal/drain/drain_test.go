@@ -124,7 +124,7 @@ func newHarness(items ...outbox.Item) *harness {
 	h := &harness{
 		rec:    rec,
 		ob:     &fakeOutbox{rec: rec, items: items},
-		sess:   &fakeSession{rec: rec, group: Group{Name: "CP Community", IsAnnouncements: true, IsAdmin: true}},
+		sess:   &fakeSession{rec: rec, group: Group{IsAnnouncements: true, IsAdmin: true}},
 		ledger: &fakeLedger{rec: rec, entries: map[string]state.Entry{}},
 	}
 	h.d = &Drainer{

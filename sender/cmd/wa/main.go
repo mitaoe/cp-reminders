@@ -21,6 +21,7 @@ import (
 
 	waLog "go.mau.fi/whatsmeow/util/log"
 
+	"cp-reminders/sender/internal/redact"
 	"cp-reminders/sender/internal/state"
 )
 
@@ -54,12 +55,16 @@ func main() {
 	switch {
 	case err == nil, errors.Is(err, flag.ErrHelp):
 	case errors.Is(err, errUsage):
-		fmt.Fprintln(os.Stderr, "wa:", err)
+		fmt.Fprintln(os.Stderr, errorLine(err))
 		os.Exit(2)
 	default:
-		fmt.Fprintln(os.Stderr, "wa:", err)
+		fmt.Fprintln(os.Stderr, errorLine(err))
 		os.Exit(1)
 	}
+}
+
+func errorLine(err error) string {
+	return "wa: " + redact.String(err.Error())
 }
 
 func run(ctx context.Context, args []string, getenv func(string) string, out io.Writer) error {
@@ -122,7 +127,7 @@ func (f *flags) parse(args []string) error {
 }
 
 func (f *flags) logger() waLog.Logger {
-	return waLog.Stdout("wa", strings.ToUpper(*f.logLevel), false)
+	return redact.Logger(waLog.Stdout("wa", strings.ToUpper(*f.logLevel), false))
 }
 
 func requireEnv(getenv func(string) string, names ...string) ([]string, error) {
