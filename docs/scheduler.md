@@ -31,7 +31,8 @@ The routes and their contracts are in [architecture.md](architecture.md#worker-h
 - Authentication runs before the request body is read.
 - A known path with the wrong method answers 405; an unknown path answers 404.
 - `href` is limited to 500 characters, `claimId` to 100, and an ack to 100 results.
-- `tip` must be the empty string, which suppresses the tip, or free text of at most 500 characters as [reminder-format.md](reminder-format.md#free-text) defines it: no link, domain, IP address, phone number or control character. Any other tip is refused with 400.
+- An ack result's `status` is `sent`, `failed` or `rejected`; any other value is refused with 400.
+- `tip` must be the empty string, which suppresses the tip, or free text of at most 500 code points as [reminder-format.md](reminder-format.md#free-text) defines it: no link, domain, IP address, phone number or invisible character. Any other tip is refused with 400.
 - A one-off tip affects reminders queued after it is set; text already in the outbox does not change.
 
 ```sh

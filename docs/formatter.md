@@ -28,15 +28,44 @@ The tip line and the blank line before it appear only when a tip applies. How th
 | Field | Rule |
 |---|---|
 | Platform | `Codeforces`, `Codechef`, `Atcoder` or `LeetCode`. |
-| Contest name, Codeforces | Sponsored names become the round name: `WorldQuant Round 1 (Codeforces Round 1128, Div. 1 + Div. 2)` → `Codeforces Round 1128 (Div. 1 + Div. 2)`. |
-| Contest name, CodeChef | The trailing rating note is dropped: `Starters 254 (Rated till 6 star)` → `Starters 254`. |
-| Contest name, AtCoder | Sponsored names become the contest name, with ASCII or full-width parentheses: `JIJ Programming Contest 2026（AtCoder Beginner Contest 476）` → `AtCoder Beginner Contest 476`. |
-| Contest name, every platform | Domains and IP addresses are defused: their dots become `․` (U+2024), so `Refact.ai Match 1` is posted as `Refact․ai Match 1` and WhatsApp does not turn it into a link. |
+| Contest name | The platform's display name, made valid free text ([below](#contest-names)). |
 | Timing | Start time in IST on a 12-hour clock, such as `8:05 PM`. Start times without a zone are UTC. |
 | Duration | `H:MM hours`, or `H hours` for whole hours, rounded to the minute. |
-| Link, Codeforces | Always `https://codeforces.com/contests/<id>`, the page that opens before the round starts; a `/contest/<id>` link opens only once the round has begun. |
-| Link, LeetCode | The contest link, ending with `/`. |
-| Link, CodeChef and AtCoder | The contest link as given. |
+| Contest link | The contest page in the platform's shape ([below](#contest-links)). |
+
+## Contest names
+
+`contestName` first takes the platform's display name:
+
+| Platform | Display name |
+|---|---|
+| Codeforces | Sponsored names become the round name: `WorldQuant Round 1 (Codeforces Round 1128, Div. 1 + Div. 2)` → `Codeforces Round 1128 (Div. 1 + Div. 2)`. |
+| CodeChef | The trailing rating note is dropped: `Starters 254 (Rated till 6 star)` → `Starters 254`. |
+| AtCoder | Sponsored names become the contest name, with ASCII or full-width parentheses: `JIJ Programming Contest 2026（AtCoder Beginner Contest 476）` → `AtCoder Beginner Contest 476`. |
+| LeetCode | The name as given. |
+
+It then makes the name valid free text as [reminder-format.md](reminder-format.md#free-text) defines it, in this order:
+
+1. Format characters, such as bidirectional overrides, zero-width spaces and the zero-width joiner, are removed, so `evil`, a zero-width space (U+200B) and `.com` become `evil.com`, which the next steps defuse.
+2. Every run of other characters that are not letters, marks, numbers, punctuation or symbols (spaces of any kind, tabs, line breaks, control characters) becomes one space, and the name is trimmed.
+3. The dots of every domain and IP address become `․` (U+2024, one dot leader), until none is left: `Refact.ai Match 1` is posted as `Refact․ai Match 1`, and `1.2.3.4.5.6.7` as `1․2․3․4․5․6․7`. The name reads the same and WhatsApp does not turn it into a link.
+4. A name longer than 200 code points is cut to 199 and ends with `…`.
+5. If the result is still not valid free text, which happens for a name that is empty or holds a phone number, the name is `<Platform> contest`, such as `Codeforces contest`.
+
+Every name the formatter renders therefore passes the sender's check.
+
+## Contest links
+
+`contestLink` maps clist's link to the platform's contest page, in the shape [reminder-format.md](reminder-format.md#fields) defines:
+
+| Platform | clist link | Contest link |
+|---|---|---|
+| Codeforces | `https://codeforces.com/contest/<id>`, `/contests/<id>`, with or without a trailing `/` | `https://codeforces.com/contests/<id>`, the page that opens before the round starts; a `/contest/<id>` link opens only once the round has begun. |
+| Codechef | `https://www.codechef.com/<code>` | The same link. |
+| Atcoder | `https://atcoder.jp/contests/<id>` | The same link. |
+| LeetCode | `https://leetcode.com/contest/<slug>`, with or without a trailing `/` | `https://leetcode.com/contest/<slug>/`. |
+
+Any other link, such as a Codeforces blog entry announcing a round, a ranking page or a link longer than 200 characters, has no contest link, and selection skips the contest. A reminder whose link leads somewhere else would be refused by the sender at send time; skipping it at selection keeps it out of the outbox. Every contest the rules select from clist's data of August 2025 to November 2026 has a contest link, which a test checks.
 
 ## Selection
 
@@ -51,6 +80,8 @@ The tip line and the blank line before it appear only when a tip applies. How th
 | `leadMinutes` | `45` | A reminder becomes due 45 minutes before the start. |
 | `minLeadMinutes` | `10` | A reminder is not sent once the start is less than 10 minutes away. |
 
+Contests of other platforms and contests without a [contest link](#contest-links) are never selected.
+
 A reminder is therefore sendable from 45 to 10 minutes before the start. Each contest is reminded at most once, even if it is rescheduled ([architecture.md](architecture.md#design-decisions)).
 
 ## Tips
@@ -59,7 +90,7 @@ A reminder is therefore sendable from 45 to 10 minutes before the start. Each co
 
 - `rules` are checked in order and the first match wins. A rule can require a `platform`, a start before a given IST time (`startsBeforeIST`, such as `"12:00"` for morning contests) and a contest name matching `eventMatches`, and holds a pool of `texts`.
 - One text from the matching rule's pool is used per contest, chosen from a hash of the contest link. The same contest always gets the same tip, so the preview shows exactly what is sent, and consecutive contests usually differ.
-- `overrides` map a contest link to a tip for that contest alone; an empty string suppresses the tip.
+- `overrides` map a contest link, as clist gives it or as the reminder shows it, to a tip for that contest alone; an empty string suppresses the tip.
 
 | Rule | Pool |
 |---|---|
@@ -73,7 +104,7 @@ Every other contest, including CodeChef Starters, Codeforces Div. 2 and combined
 
 One-off tips set through `PUT /tips` are stored in D1 and take precedence over both ([scheduler.md](scheduler.md)).
 
-Every tip, configured or one-off, is free text of at most 500 characters as [reminder-format.md](reminder-format.md#free-text) defines it: no link, domain, IP address, phone number or control character. `PUT /tips` refuses any other tip, a stored one-off tip that does not satisfy the rule is ignored in favour of the configured tip, and a test checks every tip in `tips.json`.
+Every tip, configured or one-off, is free text of at most 500 code points as [reminder-format.md](reminder-format.md#free-text) defines it: no link, domain, IP address, phone number or invisible character. `PUT /tips` refuses any other tip, a stored one-off tip that does not satisfy the rule is ignored in favour of the configured tip, and a test checks every tip in `tips.json`.
 
 ## Tests
 
@@ -81,7 +112,8 @@ Every tip, configured or one-off, is free text of at most 500 characters as [rem
 
 - **Golden tests** use the real `rules.json` on purpose: they fail when a configuration change would break the community's format or skip a contest the community posts. For every manual reminder of the four platforms, the bot's platform, contest name, timing, duration and link for the same contest must equal the manual post; the tip line is not compared, because the manual tips were written per post. Every manually posted contest must be selected. The exceptions are listed in the test with a reason each, and a test fails if a listed post stops differing: 32 manual slips (a contest that started 10 to 15 minutes after the posted time, a duration or contest number copied from another post, a wrong division label, a singular Codeforces link, a sponsor name kept, a double space or typo) and 4 posts the rules do not select (2 unrated rounds, skipped by decision, and 2 links that are not clist's).
 - **Template test.** The bot's text equals the community's latest post for the same contest byte for byte, apart from the tip line.
-- **Contract tests.** `testdata/reminders.json` must equal every reminder the formatter renders for the contests of the same period, with the configured tips; the sender's tests parse every text in it with the sender's own check. Every configured tip must be valid, and domains in contest names must be defused. The free-text checks of both languages are tested against `testdata/free-text.json` ([reminder-format.md](reminder-format.md#shared-test-data)).
+- **Name and link tests.** Hostile names are defused, cleaned, shortened or replaced by the fallback name, every clist link shape maps to its contest link or to none, and a contest without a contest link is not selected.
+- **Contract tests.** `testdata/reminders.json` must equal every reminder the formatter renders for the contests of the same period, with the configured tips, followed by the synthetic edge-case contests in `worker/test/contract.ts`; the sender's tests parse every text in it with the sender's own check. Every configured tip must be valid. The free-text checks of both languages are tested against `testdata/free-text.json` ([reminder-format.md](reminder-format.md#shared-test-data)).
 - **Rule tests** define their own rules and tips in the test, so they hold whatever the configuration says: include and exclude patterns, the duration limit, Div. 1 and Div. 2 merging, the due window, sponsored names, the reminder key, tip rules, tip pools and overrides.
 
 The Worker's other tests take every time and limit from the configuration and from the constants exported by its modules (lease, attempts, claim size, wake debounce, snapshot age, badge threshold, length limits), so changing any of them needs no test changes.
