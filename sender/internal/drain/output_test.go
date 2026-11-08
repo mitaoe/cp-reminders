@@ -42,8 +42,8 @@ func TestTargetCheckLogsTheVerification(t *testing.T) {
 }
 
 func TestDryRunPrintsTextsUnchanged(t *testing.T) {
-	text := "Call 9876543210 or see 120363012345678901@g.us"
-	h := newHarness(item("k1", text))
+	text := Header + "\n\nCall 9876543210 now"
+	h := newHarness(rawItem("k1", text))
 	h.d.DryRun = true
 	if err := h.d.Run(context.Background()); err != nil {
 		t.Fatalf("Run: %v", err)

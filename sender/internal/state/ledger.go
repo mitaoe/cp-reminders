@@ -55,6 +55,17 @@ func (l *Ledger) Lookup(key string) (Entry, bool) {
 	return l.entries[i], true
 }
 
+// SentSince returns the number of entries sent after t.
+func (l *Ledger) SentSince(t time.Time) int {
+	n := 0
+	for _, e := range l.entries {
+		if e.SentAt.After(t) {
+			n++
+		}
+	}
+	return n
+}
+
 // Len returns the number of entries.
 func (l *Ledger) Len() int { return len(l.entries) }
 

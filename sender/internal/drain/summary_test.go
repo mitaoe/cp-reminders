@@ -9,7 +9,7 @@ import (
 )
 
 func TestSummaryListsOnlyUnsentItemsWithText(t *testing.T) {
-	items := []outbox.Item{item("k1", "first reminder"), item("k2", "second\nreminder"), item("k3", "third")}
+	items := []outbox.Item{rawItem("k1", "first reminder"), rawItem("k2", "second\nreminder"), rawItem("k3", "third")}
 	results := []outbox.Result{
 		{Key: "k1", Status: outbox.StatusSent, MessageID: "M1"},
 		{Key: "k2", Status: outbox.StatusFailed, Error: "send: websocket closed"},
@@ -41,7 +41,7 @@ func TestSummaryFenceIsLongerThanBackticksInText(t *testing.T) {
 	var b strings.Builder
 	writeSummary(&b, summary{
 		Err:     errors.New("x"),
-		Items:   []outbox.Item{item("k", text)},
+		Items:   []outbox.Item{rawItem("k", text)},
 		Results: []outbox.Result{{Key: "k", Status: outbox.StatusFailed}},
 		Invalid: []error{nil},
 	})
@@ -63,7 +63,7 @@ func TestSummaryReportsDeliveredButUnacked(t *testing.T) {
 	var b strings.Builder
 	writeSummary(&b, summary{
 		Err:     errors.New("ack failed"),
-		Items:   []outbox.Item{item("k1", "delivered text")},
+		Items:   []outbox.Item{rawItem("k1", "delivered text")},
 		Results: []outbox.Result{{Key: "k1", Status: outbox.StatusSent, MessageID: "M1"}},
 		AckErr:  errors.New("HTTP 502"),
 	})

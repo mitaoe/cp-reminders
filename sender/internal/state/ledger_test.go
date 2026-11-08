@@ -29,6 +29,22 @@ func TestLoadLedgerRejectsCorruptFile(t *testing.T) {
 	}
 }
 
+func TestLedgerSentSinceCountsEntriesAfterTheTime(t *testing.T) {
+	l, err := LoadLedger(filepath.Join(t.TempDir(), "sent.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	for i, sent := range []time.Time{at.Add(-25 * time.Hour), at.Add(-24 * time.Hour), at.Add(-23 * time.Hour), at.Add(-time.Minute)} {
+		if err := l.Record(Entry{Key: fmt.Sprintf("k%d", i), SentAt: sent, MessageID: "M"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := l.SentSince(at.Add(-24 * time.Hour)); got != 2 {
+		t.Errorf("SentSince: got %d, want 2", got)
+	}
+}
+
 func TestLedgerRecordPersistsAndIsIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sent.json")
 	l, err := LoadLedger(path)

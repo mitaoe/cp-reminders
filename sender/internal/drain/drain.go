@@ -51,6 +51,7 @@ type Dialer func(ctx context.Context) (Session, error)
 // Ledger is the local record of delivered items.
 type Ledger interface {
 	Lookup(key string) (state.Entry, bool)
+	SentSince(t time.Time) int
 	Record(e state.Entry) error
 }
 
@@ -107,6 +108,14 @@ func (d *Drainer) Run(ctx context.Context) error {
 			continue
 		}
 		pending = append(pending, i)
+	}
+	budget := max(0, MaxSentPerDay-d.Ledger.SentSince(d.now().Add(-24*time.Hour)))
+	if len(pending) > budget {
+		for _, i := range pending[budget:] {
+			results[i] = failedResult(items[i].Key, ErrDailyLimit)
+		}
+		failures = append(failures, fmt.Errorf("%d reminder(s) held back: %w", len(pending)-budget, ErrDailyLimit))
+		pending = pending[:budget]
 	}
 	if len(pending) > 0 {
 		if err := d.deliver(ctx, items, results, pending); err != nil {

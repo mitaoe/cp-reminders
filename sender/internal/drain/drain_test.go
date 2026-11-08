@@ -72,11 +72,12 @@ func (s *fakeSession) Group(ctx context.Context, jid string) (Group, error) {
 }
 
 func (s *fakeSession) SendText(ctx context.Context, jid, text string) (string, error) {
-	s.rec.add("send %s %s", jid, text)
-	if err := s.sendErr[text]; err != nil {
+	body := strings.TrimPrefix(text, Header+"\n\n")
+	s.rec.add("send %s %s", jid, body)
+	if err := s.sendErr[body]; err != nil {
 		return "", err
 	}
-	s.sent = append(s.sent, text)
+	s.sent = append(s.sent, body)
 	s.nextID++
 	return fmt.Sprintf("MSG%d", s.nextID), nil
 }
@@ -95,6 +96,16 @@ type fakeLedger struct {
 func (l *fakeLedger) Lookup(key string) (state.Entry, bool) {
 	e, ok := l.entries[key]
 	return e, ok
+}
+
+func (l *fakeLedger) SentSince(t time.Time) int {
+	n := 0
+	for _, e := range l.entries {
+		if e.SentAt.After(t) {
+			n++
+		}
+	}
+	return n
 }
 
 func (l *fakeLedger) Record(e state.Entry) error {
@@ -270,7 +281,7 @@ func TestLedgerHitIsNotResent(t *testing.T) {
 }
 
 func TestInvalidItemsAreFailedOthersSent(t *testing.T) {
-	h := newHarness(item("k1", ""), item("k2", "ok"))
+	h := newHarness(rawItem("k1", ""), item("k2", "ok"))
 	err := h.d.Run(context.Background())
 	if err == nil {
 		t.Fatal("Run succeeded with an invalid item")
