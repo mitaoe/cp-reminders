@@ -16,13 +16,11 @@ import (
 
 const pairDisplayName = "Chrome (Linux)"
 
-// Client is a whatsmeow client that records fatal connection events.
 type Client struct {
 	*whatsmeow.Client
 	w *watcher
 }
 
-// NewClient returns a Client for dev.
 func NewClient(dev *store.Device, log waLog.Logger) *Client {
 	cli := whatsmeow.NewClient(dev, log)
 	w := newWatcher()
@@ -30,14 +28,10 @@ func NewClient(dev *store.Device, log waLog.Logger) *Client {
 	return &Client{Client: cli, w: w}
 }
 
-// Err returns the first fatal event seen, if any.
 func (c *Client) Err() error { return c.w.Err() }
 
-// Done is closed when a fatal event is seen.
 func (c *Client) Done() <-chan struct{} { return c.w.Done() }
 
-// ConnectAndWait connects and waits until the client is logged in.
-// ctx also bounds the lifetime of the connection's background loops.
 func (c *Client) ConnectAndWait(ctx context.Context, timeout time.Duration) error {
 	if err := c.ConnectContext(ctx); err != nil {
 		return fmt.Errorf("connect: %w", err)
@@ -49,12 +43,10 @@ func (c *Client) ConnectAndWait(ctx context.Context, timeout time.Duration) erro
 	return nil
 }
 
-// WaitConnected waits for the next Connected event or a fatal event.
 func (c *Client) WaitConnected(ctx context.Context, timeout time.Duration) error {
 	return c.w.waitConnected(ctx, timeout)
 }
 
-// SelfJIDs returns the device's phone-number JID and LID, when known.
 func (c *Client) SelfJIDs() []types.JID {
 	var ids []types.JID
 	if c.Store.ID != nil {
@@ -66,7 +58,6 @@ func (c *Client) SelfJIDs() []types.JID {
 	return ids
 }
 
-// SendText sends text as a plain conversation message.
 func (c *Client) SendText(ctx context.Context, to types.JID, text string) (types.MessageID, error) {
 	if err := c.Err(); err != nil {
 		return "", err
@@ -82,7 +73,6 @@ func textMessage(text string) *waE2E.Message {
 	return &waE2E.Message{Conversation: proto.String(text)}
 }
 
-// PairQR links a new device by QR code, calling show for every code.
 func (c *Client) PairQR(ctx context.Context, show func(code string)) error {
 	ch, err := c.startPairing(ctx)
 	if err != nil {
@@ -94,7 +84,6 @@ func (c *Client) PairQR(ctx context.Context, show func(code string)) error {
 	})
 }
 
-// PairWithPhone links a new device with an 8-character code entered on the phone.
 func (c *Client) PairWithPhone(ctx context.Context, phone string, show func(code string)) error {
 	ch, err := c.startPairing(ctx)
 	if err != nil {

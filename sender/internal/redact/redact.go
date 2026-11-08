@@ -1,5 +1,3 @@
-// Package redact removes WhatsApp identifiers and phone numbers from text
-// before it is written to output that may be public, such as workflow logs.
 package redact
 
 import (
@@ -15,15 +13,11 @@ var (
 	number = regexp.MustCompile(`(^|[^0-9A-Za-z_.])[0-9]{10,}(?:_[0-9]{1,3})?\b`)
 )
 
-// String replaces the user part of every WhatsApp ID with <id>, keeping its
-// server, and every standalone run of ten or more digits with <number>.
 func String(s string) string {
 	s = jid.ReplaceAllString(s, "<id>@$1")
 	return number.ReplaceAllString(s, "${1}<number>")
 }
 
-// Logger returns a whatsmeow logger that redacts each message with String
-// before passing it to next. Sub-loggers redact as well.
 func Logger(next waLog.Logger) waLog.Logger {
 	return logger{next: next}
 }
@@ -52,9 +46,6 @@ func (l logger) Sub(module string) waLog.Logger {
 	return logger{next: l.next.Sub(module)}
 }
 
-// Signal returns a logger for libsignal that redacts each error, warning and
-// info message with String and passes it, prefixed with its caller, to next at
-// the same level. Debug messages, which contain key material, are dropped.
 func Signal(next waLog.Logger) signallog.Loggable {
 	return signal{next: Logger(next)}
 }

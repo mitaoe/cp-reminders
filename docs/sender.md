@@ -45,7 +45,7 @@ While a command runs, the decrypted database lives in a private temporary direct
 5. Items whose key is already in `sent.json` are acknowledged as `sent` with the stored message ID and not sent again.
 6. Apply the daily limit: at most 8 messages in any 24 hours, counted from `sent.json` ([content checks](#content-checks)). Pending items beyond it are acknowledged as `failed` ("daily limit") and the run fails. If nothing is left to send, WhatsApp is not contacted.
 7. Wait a random time between 0 and `--jitter`, decrypt the session, connect and wait for login.
-8. Check the target with `GetGroupInfo(ANNOUNCE_JID)`: it must be a community's default subgroup (`IsDefaultSubGroup`), and the sender must be admin or super admin, matched by phone-number JID or LID.
+8. Check the target with `GetGroupInfo(ANNOUNCE_JID)`: it must be a community's default subgroup (`IsDefaultSubGroup`), and the sender must be admin or super admin, matched by phone-number JID or LID, ignoring device parts.
 9. Send each pending item as a plain text message (`waE2E.Message{Conversation: …}`), which carries no link preview, and record it in `sent.json` straight away. The first send error or `sent.json` write error stops sending; the remaining items are reported as `failed` ("not attempted").
 10. Disconnect and encrypt a snapshot of the session, so the rotated keys are saved even if the acknowledgement hangs. The decrypted store stays open ([shutdown](#shutdown)).
 11. `POST /outbox/ack {claimId, results}`, retrying network errors, 5xx and 429 up to 3 attempts with 1 s and 2 s backoff, within its own 60-second budget.

@@ -1,9 +1,7 @@
-// Package wa wraps a whatsmeow client for short connect, act, disconnect runs.
 package wa
 
 import "errors"
 
-// Errors reported for fatal connection and pairing events.
 var (
 	ErrLoggedOut          = errors.New("whatsapp: logged out; re-pair with `wa pair`")
 	ErrStreamReplaced     = errors.New("whatsapp: stream replaced by another connection with the same session")

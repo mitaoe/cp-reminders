@@ -6,8 +6,6 @@ import (
 	"go.mau.fi/whatsmeow/types"
 )
 
-// IsAdmin reports whether any of self is an admin or super admin of the group.
-// Participants are matched by JID, LID or phone number, ignoring device parts.
 func IsAdmin(info *types.GroupInfo, self ...types.JID) bool {
 	if info == nil {
 		return false

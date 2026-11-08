@@ -1,11 +1,3 @@
-// Command wa posts contest reminders to a WhatsApp community announcements group.
-//
-// Usage:
-//
-//	wa keygen
-//	wa pair   --state DIR [--phone 91XXXXXXXXXX] [--force]
-//	wa groups --state DIR
-//	wa drain  --state DIR [--jitter 90s] [--dry-run]
 package main
 
 import (
