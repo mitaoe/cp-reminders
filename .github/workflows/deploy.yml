@@ -54,7 +54,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          check-latest: true
           package-manager-cache: false
       - name: Install pnpm
         working-directory: .
@@ -73,7 +72,7 @@ jobs:
           }
           fetch() {
             local want got
-            want=$(integrity "$1")
+            want=$(integrity "$1" || true)
             [[ -n "$want" ]] || { echo "pnpm-lock.yaml has no integrity for $1"; exit 1; }
             curl -fsSL --retry 3 -o "$3" "$2"
             got="sha512-$(openssl dgst -sha512 -binary "$3" | base64 -w0)"
