@@ -54,7 +54,7 @@ If `persist` fails, its artifact is kept for a day: open the failed `persist` jo
 
 ## deploy.yml: deploy the Worker
 
-Runs on a push to `main` that changes `worker/`, the workspace files (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`) or `deploy.yml` itself, which in the deployment repository means a release (an update of the fork's `main`). It can also be started by hand (`workflow_dispatch`).
+Runs on a push to `main` that changes `worker/`, the workspace files (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`) or `deploy.yml` itself, which in the deployment repository means a Sync fork that brings in such a change. It can also be started by hand (`workflow_dispatch`).
 
 | Aspect | Setting | Reason |
 |---|---|---|
