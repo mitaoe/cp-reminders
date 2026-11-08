@@ -96,11 +96,11 @@ The target group is reported only as verified or refused, never by name.
 
 Reminder texts are printed unchanged, in the failure summary and in `--dry-run` output, so they can be posted as they are. Reminder keys, claim IDs and message IDs identify no person and are not treated as identifiers.
 
+The job summary is rendered as Markdown on the public run page, and the keys, times, message IDs and error texts in it come from the Worker or from libraries. Each is shown on one line, with whitespace collapsed, control characters escaped as `\uXXXX` and values longer than 200 characters shortened with `…`, as an inline code span whose backtick delimiter is longer than any run of backticks in the value, padded with a space when the value starts or ends with a backtick ([CommonMark code spans](https://spec.commonmark.org/0.31.2/#code-spans)). It therefore shows literally and cannot add headings, links, formatting or reordered text. Reminder texts are in fenced blocks whose fence is at least three backticks and longer than any run of backticks in the text.
+
 Not covered: phone numbers written with spaces or dashes, which neither whatsmeow nor libsignal writes, and the message of a Go runtime panic, which the runtime prints itself.
 
 `wa groups` and `wa pair` print IDs and phone numbers on purpose; they are run locally, never in a workflow.
-
-The job summary is rendered as Markdown on the public run page, and the keys, times, message IDs and error texts in it come from the Worker or from libraries. Each is written on a single line as an inline code span whose backtick delimiter is longer than any run of backticks in the value, padded with a space when the value starts or ends with a backtick ([CommonMark code spans](https://spec.commonmark.org/0.31.2/#code-spans)), so it shows literally and cannot add headings, links or formatting. Reminder texts are in fenced blocks whose fence is longer than any run of backticks in the text.
 
 ## Pairing
 

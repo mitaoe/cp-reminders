@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 
 	"cp-reminders/sender/internal/outbox"
 	"cp-reminders/sender/internal/redact"
@@ -63,16 +64,37 @@ func fenceFor(text string) string {
 	return strings.Repeat("`", max(3, longestBacktickRun(text)+1))
 }
 
+const maxCodeRunes = 200
+
 func code(s string) string {
 	s = oneLine(s)
 	if s == "" {
 		return "` `"
 	}
+	if r := []rune(s); len(r) > maxCodeRunes {
+		s = string(r[:maxCodeRunes]) + "…"
+	}
+	s = escapeControls(s)
 	delim := strings.Repeat("`", longestBacktickRun(s)+1)
 	if strings.HasPrefix(s, "`") || strings.HasSuffix(s, "`") {
 		s = " " + s + " "
 	}
 	return delim + s + delim
+}
+
+func escapeControls(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case unicode.IsGraphic(r) && !unicode.Is(unicode.Bidi_Control, r):
+			b.WriteRune(r)
+		case r > 0xFFFF:
+			fmt.Fprintf(&b, `\U%08X`, r)
+		default:
+			fmt.Fprintf(&b, `\u%04X`, r)
+		}
+	}
+	return b.String()
 }
 
 func longestBacktickRun(s string) int {
