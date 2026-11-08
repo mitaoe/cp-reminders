@@ -40,7 +40,7 @@ Runs on a push to `main` that changes `worker/`, the workspace files (`package.j
 |---|---|---|
 | Concurrency | `group: deploy-worker`, `cancel-in-progress: false` | Deploys run one at a time and in order. |
 | Permissions | `contents: read` | It only reads the code. |
-| Secrets | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` as job `env:` | Wrangler reads both from the environment ([CI/CD](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)). |
+| Secrets | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` in the `env:` of the migration and deploy steps only | Wrangler reads both from the environment ([CI/CD](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)). The install, typecheck and test steps run third-party package code and never see the token. |
 
 Steps, in `worker/`: typecheck and test, so a change that fails the checks is never deployed; apply pending D1 migrations (`pnpm run db:migrate:remote`); deploy with `pnpm run deploy --message "$GITHUB_SHA"`, which keeps the Worker's stored secrets.
 
