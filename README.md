@@ -36,12 +36,18 @@ Posts a reminder for every Codeforces, CodeChef, LeetCode and AtCoder contest in
 
 ### Where it runs
 
-- **[mitaoe/cp-reminders](https://github.com/mitaoe/cp-reminders)** holds the code. Changes arrive as pull requests, and CI checks them. It has no secrets, and the bot never runs from it.
+- **[mitaoe/cp-reminders](https://github.com/mitaoe/cp-reminders)** holds the code. It has no secrets, and the bot never runs from it. Its `main` changes only through pull requests whose CI checks pass; force pushes and deletion are blocked. `.github/CODEOWNERS` requests a review from @adityakotkar47 on every pull request opened by another account, except while it is a draft. GitHub never requests a review from a pull request's own author, and no approval is required, so @adityakotkar47 merges his own pull requests once CI passes.
 - **The deployment repository**, [adityakotkar47/cp-reminders](https://github.com/adityakotkar47/cp-reminders), is a fork of it and runs the bot. It alone has the bot's secrets, the repository variable `BOT_DEPLOYMENT=true` that enables `send.yml` and `deploy.yml`, and branch `state`.
 
-A merged change goes live when the fork is synced (**Sync fork** on GitHub): `deploy.yml` deploys the Worker when `worker/` changed, and the next send run uses the new sender. Whatever is synced runs with the bot's secrets, so changes to `.github/workflows/` and `sender/` are reviewed before syncing.
+A release is an update of the fork's `main`, and a change goes live with it. Every workflow on the fork can read the bot's secrets. `deploy.yml` runs when the release touches `worker/`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or `deploy.yml` itself ([workflow.md](docs/workflow.md#deployyml-deploy-the-worker)): its tests run without secrets, then pnpm, Wrangler and the locked dependencies run with the Cloudflare token, apply `worker/migrations` to the production D1 database and deploy a Worker that holds its own secrets. The next send run uses the new sender. A release therefore reviews the whole difference and pushes exactly the reviewed commit, with the fork as `origin` and `mitaoe/cp-reminders` as `upstream`:
 
-Branch `state` of the deployment repository holds the sender's WhatsApp login, encrypted with age (`session.db.age`; the key is the secret `AGE_IDENTITY`), and its delivery log (`sent.json`). Each run replaces it with a single new commit. Syncing leaves it untouched; it must not be merged or deleted, since deleting it logs the bot out.
+1. `git fetch origin && git fetch upstream`, then record the commit to release with `git rev-parse upstream/main`.
+2. Review `git diff origin/main <that commit>`, or the [compare view](https://github.com/adityakotkar47/cp-reminders/compare/main...mitaoe:cp-reminders:main) with collapsed files such as `pnpm-lock.yaml` expanded; when reviewing in the compare view, the commit to release is the last one it lists.
+3. `git push origin <that commit>:main`, a fast-forward that the fork's ruleset allows. Pushing a change to `.github/workflows/` needs a credential with the `workflow` scope.
+
+**Sync fork** on GitHub releases whatever is on `mitaoe/cp-reminders` `main` at the moment it is clicked, so with it the compare view is checked again immediately before clicking.
+
+Branch `state` of the deployment repository holds the sender's WhatsApp login, encrypted with age (`session.db.age`; the key is the secret `AGE_IDENTITY`), and its delivery log (`sent.json`). Each run replaces it with a single new commit. A release leaves it untouched; it must not be merged or deleted, since deleting it logs the bot out.
 
 ## Documentation
 
@@ -58,7 +64,7 @@ Branch `state` of the deployment repository holds the sender's WhatsApp login, e
 |---|---|
 | See upcoming reminders | `GET /preview` ([scheduler.md](docs/scheduler.md#http-api)) |
 | Add or suppress a tip for one contest | `PUT /tips` ([scheduler.md](docs/scheduler.md#http-api)) |
-| Release a change | Merge it in `mitaoe/cp-reminders`, then sync the deployment repository ([Where it runs](#where-it-runs)). |
+| Release a change | Merge it in `mitaoe/cp-reminders`, then release it to the deployment repository ([Where it runs](#where-it-runs)). |
 | Change which contests are posted, or the standard tips | Edit `worker/config/` and release it ([formatter.md](docs/formatter.md)) |
 | A reminder failed | GitHub emails the failed `send` run; its summary holds the text to post by hand. |
 | The sender is logged out | Pair again ([sender.md](docs/sender.md#pairing)) |
