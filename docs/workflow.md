@@ -9,7 +9,7 @@ The same files exist in `mitaoe/cp-reminders` and in its fork, the deployment re
 | File | Workflow | Jobs (id: name) | Runs in | Condition |
 |---|---|---|---|---|
 | `ci.yml` | CI | `worker`: Worker Type Check and Tests; `sender`: Sender Vet and Tests | Every repository | Always |
-| `send.yml` | Send Reminders | `drain`: Drain Outbox | The deployment repository only | The repository variable `BOT_DEPLOYMENT` is `true` |
+| `send.yml` | Send Reminders | `drain`: Drain Outbox; `persist`: Persist State | The deployment repository only | The repository variable `BOT_DEPLOYMENT` is `true` |
 | `deploy.yml` | Deploy Worker | `check`: Type Check and Tests; `deploy`: Deploy to Cloudflare | The deployment repository only | The repository variable `BOT_DEPLOYMENT` is `true` |
 
 The Worker dispatches `send.yml` and the README's CI badge points at `ci.yml`, both by file name; renaming a workflow changes only the badge's label.
@@ -27,7 +27,7 @@ It has two jobs, so that the token that can write to the repository never shares
 | `drain` (Drain Outbox) | `contents: read` | The sender, with its secrets. |
 | `persist` (Persist State), `needs: drain` | `contents: write` | No repository code: a pinned artifact action and `git`, pushing only `refs/heads/state`. |
 
-Code in the `drain` job can at most change the two state files it hands over; it cannot obtain a token that writes `main` or any other branch.
+What `drain` hands to `persist` is untrusted: the artifact's contents and the outputs `changed` and `state-sha`. `persist` uses only the bytes of two regular files from the artifact and a value of `state-sha` that is empty or a commit ID; the artifact never becomes part of a git directory, and git runs without system or global configuration and without hooks. Code in `drain` can therefore choose what branch `state` holds, which it can already do with `AGE_IDENTITY`, but cannot obtain a token that writes `main`. It can also write Actions cache entries in the `main` scope; the only jobs that restore a cache, `drain` itself and the `check` jobs of `ci.yml` and `deploy.yml`, hold no write token and no Cloudflare token.
 
 | Aspect | Setting | Reason |
 |---|---|---|
@@ -45,10 +45,12 @@ Code in the `drain` job can at most change the two state files it hands over; it
 4. **Detect state changes** (`if: always()`, because the keys rotate even when the drain fails): the job output `changed` is `true` when `session.db.age` or `sent.json` differs from the fetched commit.
 5. **Upload state** when changed: exactly those two files, as artifact `state` kept for one day. The artifact holds the same encrypted session that branch `state` publishes.
 
-`persist` runs after `drain`, whatever its result, when `changed` is `true`:
+`persist` runs after `drain`, whatever its result, when `BOT_DEPLOYMENT` is `true` and `changed` is `true`:
 
-1. **Download state** into an empty directory.
-2. **Push state branch.** Checks that `state-sha` is empty or a commit ID, initialises a new repository, commits the files that exist as a single commit by `github-actions[bot]`, and runs `git push --force-with-lease="refs/heads/state:$STATE_SHA" origin HEAD:refs/heads/state`. The allowlist keeps a plaintext `session.db` out of the repository, the single commit keeps the repository from growing, and the lease rejects the push if the branch moved since the fetch; an empty `state-sha` requires that the branch does not exist.
+1. **Download state** into `$RUNNER_TEMP/artifact`.
+2. **Push state branch.** Checks that `state-sha` is empty or a commit ID; creates a new repository in `$RUNNER_TEMP/repo` before reading the artifact; copies `session.db.age` and `sent.json` into it if they are regular files, and fails on a symlink, a directory or any other kind of file; commits them as a single commit by `github-actions[bot]`; and runs `git push --force-with-lease="refs/heads/state:$STATE_SHA" origin HEAD:refs/heads/state`. The allowlist keeps a plaintext `session.db` out of the repository, the single commit keeps the repository from growing, and the lease rejects the push if the branch moved since the fetch; an empty `state-sha` requires that the branch does not exist.
+
+If `persist` fails, its artifact is kept for a day: re-run only the failed `persist` job, which reuses `drain`'s outputs and artifact. Re-running `drain` would connect with the session from before the run, whose keys have rotated since.
 
 ## deploy.yml: deploy the Worker
 

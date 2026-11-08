@@ -87,7 +87,7 @@ jobs:
   persist:
     name: Persist State
     needs: drain
-    if: always() && needs.drain.outputs.changed == 'true'
+    if: always() && vars.BOT_DEPLOYMENT == 'true' && needs.drain.outputs.changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -97,20 +97,34 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: state
-          path: state
+          path: ${{ runner.temp }}/artifact
 
       - name: Push state branch
-        working-directory: state
         env:
           GH_TOKEN: ${{ github.token }}
           STATE_SHA: ${{ needs.drain.outputs.state-sha }}
+          GIT_CONFIG_NOSYSTEM: "1"
+          GIT_CONFIG_GLOBAL: /dev/null
         run: |
           set -euo pipefail
-          [[ "$STATE_SHA" =~ ^([0-9a-f]{40})?$ ]] || { echo "invalid state commit: ${STATE_SHA}"; exit 1; }
-          git init --quiet --initial-branch=state
-          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          [[ "$STATE_SHA" =~ ^([0-9a-f]{40})?$ ]] || { echo "invalid state commit"; exit 1; }
+          src="${RUNNER_TEMP}/artifact"
+          repo="${RUNNER_TEMP}/repo"
+          git init --quiet --initial-branch=state "$repo"
           files=()
-          for f in session.db.age sent.json; do [ -e "$f" ] && files+=("$f"); done
+          for f in session.db.age sent.json; do
+            if [ -L "$src/$f" ] || { [ -e "$src/$f" ] && [ ! -f "$src/$f" ]; }; then
+              echo "not a regular file: $f"
+              exit 1
+            fi
+            if [ -f "$src/$f" ]; then
+              cp -- "$src/$f" "$repo/$f"
+              files+=("$f")
+            fi
+          done
+          cd "$repo"
+          git config core.hooksPath /dev/null
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
           git add -- "${files[@]}"
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
