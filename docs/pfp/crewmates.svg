@@ -1,0 +1,29 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 640 640' width='640' height='640'><rect width='640' height='640' fill='#fffced'/>
+<defs>
+<path id='body' d='M110 20 C152 20 174 52 174 96 C175 140 171 182 168 222 L168 236 Q168 250 154 250 L132 250 Q118 250 118 238 L118 220 Q118 208 109 208 Q100 208 100 220 L100 228 Q100 240 88 240 L64 240 Q52 240 52 228 C50 190 46 150 48 106 C50 56 76 20 110 20 Z'/>
+<rect id='pack' x='16' y='80' width='42' height='98' rx='16'/>
+<ellipse id='visor' cx='130' cy='82' rx='44' ry='28' transform='rotate(-6 130 82)'/>
+<clipPath id='bodyclip'><use href='#body'/></clipPath>
+<clipPath id='packclip'><use href='#pack'/></clipPath>
+<clipPath id='visorclip'><use href='#visor'/></clipPath>
+<g id='crew' stroke='#272300' stroke-linejoin='round'>
+<use href='#pack'/>
+<g clip-path='url(#packclip)' stroke='none'><rect x='0' y='150' width='80' height='40' fill='currentColor'/></g>
+<use href='#pack' fill='none'/>
+<use href='#body'/>
+<g clip-path='url(#bodyclip)' stroke='none' fill='currentColor'>
+<path d='M142 30 C156 90 146 170 150 260 L190 260 L190 30 Z'/>
+<path d='M86 206 L100 206 L100 260 L86 260 Z'/>
+</g>
+<use href='#body' fill='none'/>
+<use href='#visor' fill='#a7d8ee'/>
+<g clip-path='url(#visorclip)' stroke='none'><path d='M82 90 Q130 114 180 84 L180 130 L82 130 Z' fill='#2a4a66'/></g>
+<ellipse cx='117' cy='70' rx='21' ry='8' transform='rotate(-6 117 70)' fill='#f3fbff' stroke='none'/>
+<use href='#visor' fill='none'/>
+</g>
+</defs>
+<g transform='translate(320 320) scale(1.22) translate(-328 -208)'>
+<use href='#crew' transform='translate(270 0) scale(1.3)' fill='#ffd403' color='#dcaf00' stroke-width='3.6'/>
+<use href='#crew' transform='translate(140 125) scale(0.86)' fill='#4f80c2' color='#3a66a6' stroke-width='5.4'/>
+<use href='#crew' transform='translate(237 229) scale(0.62)' fill='#ae0f0b' color='#850b08' stroke-width='7.5'/>
+</g></svg>

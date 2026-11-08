@@ -32,7 +32,7 @@ Posts a reminder for every Codeforces, CodeChef, LeetCode and AtCoder contest in
 | `sender/` | Go WhatsApp sender. |
 | `.github/workflows/` | `send.yml` drains the outbox; `deploy.yml` deploys the Worker; `ci.yml` runs the checks. |
 | `docs/` | Design and operation. |
-| `docs/pfp/` | The sender's WhatsApp profile picture: `books-cascade.svg` is the source, `books-cascade.png` the 640×640 image set on the account. |
+| `docs/pfp/` | The sender's WhatsApp profile picture: `crewmates.svg` is the source, `crewmates.png` the 640×640 image set on the account. |
 
 ### Where it runs
 
