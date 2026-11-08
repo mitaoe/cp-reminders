@@ -217,6 +217,22 @@ func TestSessionReleaseSavesAgainAfterAFailedSave(t *testing.T) {
 	}
 }
 
+func TestSessionReleaseSavesASessionThatWasNeverSaved(t *testing.T) {
+	dir := t.TempDir()
+	s, err := CreateSession(context.Background(), dir, newTestVault(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := s.workDir
+	if err := s.Release(); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+	assertOnlyFiles(t, dir, SessionFile)
+	if _, err := os.Stat(work); !os.IsNotExist(err) {
+		t.Errorf("plaintext work dir still exists after Release: %v", err)
+	}
+}
+
 func TestSessionReleaseAfterASuccessfulSaveDoesNotSaveAgain(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

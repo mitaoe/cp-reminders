@@ -15,7 +15,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// SessionFile is the encrypted whatsmeow store inside a state directory.
 const SessionFile = "session.db.age"
 
 const (
@@ -26,9 +25,7 @@ const (
 )
 
 var (
-	// ErrNoSession is returned when the state directory has no session.
 	ErrNoSession = errors.New("no session in state directory; run `wa pair` first")
-	// ErrNotPaired is returned when the session holds no paired device.
 	ErrNotPaired = errors.New("session is not paired; run `wa pair`")
 
 	errSessionDiscarded = errors.New("session was discarded")
@@ -44,16 +41,15 @@ const (
 )
 
 type Session struct {
-	Container  *sqlstore.Container
-	db         *sql.DB
-	dir        string
-	vault      *Vault
-	workDir    string
-	status     sessionStatus
-	saveFailed bool
+	Container *sqlstore.Container
+	db        *sql.DB
+	dir       string
+	vault     *Vault
+	workDir   string
+	status    sessionStatus
+	saved     bool
 }
 
-// SessionExists reports whether dir holds an encrypted session.
 func SessionExists(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, SessionFile))
 	return err == nil
@@ -63,7 +59,6 @@ func CreateSession(ctx context.Context, dir string, v *Vault, log waLog.Logger) 
 	return openWork(ctx, dir, v, log, nil)
 }
 
-// OpenSession decrypts the session in dir.
 func OpenSession(ctx context.Context, dir string, v *Vault, log waLog.Logger) (*Session, error) {
 	sealed := filepath.Join(dir, SessionFile)
 	if _, err := os.Stat(sealed); errors.Is(err, fs.ErrNotExist) {
@@ -104,7 +99,6 @@ func openWork(ctx context.Context, dir string, v *Vault, log waLog.Logger, resto
 	return &Session{Container: container, db: db, dir: dir, vault: v, workDir: work}, nil
 }
 
-// PairedDevice returns the session's device, or ErrNotPaired.
 func (s *Session) PairedDevice(ctx context.Context) (*store.Device, error) {
 	dev, err := s.Container.GetFirstDevice(ctx)
 	if err != nil {
@@ -124,7 +118,7 @@ func (s *Session) Save() error {
 		return errSessionDiscarded
 	}
 	err := s.snapshotAndSeal()
-	s.saveFailed = err != nil
+	s.saved = err == nil
 	return err
 }
 
@@ -165,7 +159,7 @@ func (s *Session) Release() error {
 		return nil
 	}
 	var saveErr error
-	if s.saveFailed {
+	if !s.saved {
 		saveErr = s.Save()
 	}
 	return errors.Join(saveErr, s.Discard())
