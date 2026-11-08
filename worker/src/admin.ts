@@ -34,7 +34,7 @@ export const adminRoutes: Route[] = [
       if (href === undefined) return badRequest("href must be an http(s) URL");
       const { tip } = body;
       if (typeof tip !== "string" || !isValidTip(tip)) {
-        return badRequest(`tip must be one line of up to ${MAX_TIP_LENGTH} characters without links, domains, IP addresses or phone numbers`);
+        return badRequest(`tip must be one line of up to ${MAX_TIP_LENGTH} code points without links, domains, IP addresses or phone numbers`);
       }
       await env.DB
         .prepare(

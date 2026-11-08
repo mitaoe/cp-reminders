@@ -2,6 +2,7 @@ import { env, exports } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isoUtc } from "../src/core/format.ts";
 import { httpFailure } from "../src/errors.ts";
+import { setMeta } from "../src/meta.ts";
 import { MIN, NOW, mockFetch, resetDb, seedReminder } from "./helpers.ts";
 
 beforeEach(async () => {
@@ -32,7 +33,13 @@ describe("GET /health", () => {
       claimed: 0,
       failed24h: 0,
       expired24h: 0,
+      unlinkedContests: 0,
     });
+  });
+
+  it("reports upcoming contests without a contest link", async () => {
+    await setMeta(env.DB, "unlinked_contests", "2").run();
+    expect(await (await health()).json()).toMatchObject({ unlinkedContests: 2 });
   });
 
   it("counts reminders by state and limits failed and expired to the last 24 hours", async () => {
@@ -72,7 +79,7 @@ describe("GET /health", () => {
     await seedReminder({ key: "k", text: "TOP SECRET MESSAGE BODY", href: "https://private.test/contest", status: "failed", last_error: "boom detail" });
     const raw = await (await health()).text();
     expect(Object.keys(JSON.parse(raw)).sort()).toEqual(
-      ["claimed", "expired24h", "failed24h", "lastFetchAt", "lastFetchError", "lastFetchSource", "lastTickAt", "lastWakeError", "queued"],
+      ["claimed", "expired24h", "failed24h", "lastFetchAt", "lastFetchError", "lastFetchSource", "lastTickAt", "lastWakeError", "queued", "unlinkedContests"],
     );
     for (const leaked of ["TOP SECRET", "private.test", "boom detail", env.TICK_TOKEN, env.SENDER_TOKEN, env.ADMIN_TOKEN, env.GH_TOKEN, env.CLIST_API_KEY]) {
       expect(raw).not.toContain(leaked);

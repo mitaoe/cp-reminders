@@ -29,6 +29,7 @@ function status(health: Health, nowMs: number): Pick<Badge, "message" | "color">
   if (health.lastWakeError !== null) return { message: "dispatch failing", color: BADGE_COLOR.failing };
   const missed = health.failed24h + health.expired24h;
   if (missed > 0) return { message: `${missed} missed in 24h`, color: BADGE_COLOR.failing };
+  if (health.unlinkedContests > 0) return { message: "degraded: contest link", color: BADGE_COLOR.degraded };
   if (health.lastFetchError !== null) return { message: "degraded: clist", color: BADGE_COLOR.degraded };
   return { message: "ok", color: BADGE_COLOR.ok };
 }

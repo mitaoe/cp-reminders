@@ -7,6 +7,7 @@ export async function loadOverrides(env: Env): Promise<TipOverrides> {
   const stored: TipOverrides = {};
   for (const row of results) {
     if (isValidTip(row.tip)) stored[row.href] = row.tip;
+    else console.error(`ignoring the stored tip for ${row.href}: not a valid tip`);
   }
   return { ...baseOverrides, ...stored };
 }

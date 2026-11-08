@@ -1,8 +1,9 @@
-import { IST_OFFSET_MS, formatReminder, formatTime, istClock, utcMs } from "./core/format.ts";
+import { type Contest, IST_OFFSET_MS, contestLink, formatReminder, formatTime, istClock, utcMs } from "./core/format.ts";
 import { selectContests } from "./core/select.ts";
 import { rules, tipRules } from "./config.ts";
 import { ensureSnapshot } from "./contests.ts";
 import type { Fetcher } from "./env.ts";
+import { NO_CONTEST_LINK } from "./tick.ts";
 import { loadOverrides } from "./tips.ts";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -25,9 +26,9 @@ export async function renderPreview(env: Env, nowMs: number, fetcher: Fetcher): 
     .slice(0, PREVIEW_LIMIT);
   if (upcoming.length === 0) return "No upcoming reminders.\n";
   const overrides = await loadOverrides(env);
-  return (
-    upcoming
-      .map(({ c, sendAt }, i) => `#${i + 1}  sends ${formatIst(sendAt)}\n\n${formatReminder(c, tipRules, overrides)}`)
-      .join(SEPARATOR) + "\n"
-  );
+  const render = (c: Contest) =>
+    contestLink(c) === undefined
+      ? `No contest link in ${c.href}: this reminder will be recorded as failed (${NO_CONTEST_LINK}).`
+      : formatReminder(c, tipRules, overrides);
+  return upcoming.map(({ c, sendAt }, i) => `#${i + 1}  sends ${formatIst(sendAt)}\n\n${render(c)}`).join(SEPARATOR) + "\n";
 }

@@ -22,9 +22,11 @@ import {
   seedReminder,
 } from "./helpers.ts";
 
+let consoleError: ReturnType<typeof vi.spyOn>;
+
 beforeEach(async () => {
   await resetDb();
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -133,13 +135,63 @@ describe("runTick: tips", () => {
     expect((await getReminder(TARGET_KEY))?.text).not.toContain("Tip");
   });
 
-  it("ignores a stored override that is not a valid tip", async () => {
+  it("ignores a stored override that is not a valid tip, and logs it", async () => {
     await env.DB.prepare("INSERT INTO tip_overrides (href, tip, updated_at) VALUES (?1, 'join evil.com', ?2)")
       .bind(link, isoUtc(NOW))
       .run();
     const { fetcher } = mockFetch();
     await runTick(env, NOW, fetcher);
     expect((await getReminder(TARGET_KEY))?.text).toBe(formatReminder(TARGET, tipRules, baseOverrides));
+    expect(consoleError).toHaveBeenCalledWith(`ignoring the stored tip for ${link}: not a valid tip`);
+  });
+});
+
+describe("runTick: contests the formatter cannot render as given", () => {
+  const unlinked = { ...targetInFixtures, href: `${targetInFixtures.href.replace(/\/$/, "")}/ranking/page` };
+  const unlinkedKey = reminderKey(unlinked);
+
+  it("records a due contest without a contest link as failed at once, without text", async () => {
+    const { fetcher, calls } = onlyContests(unlinked);
+    const result = await runTick(env, NOW, fetcher);
+    expect(result).toMatchObject({ queued: 0, woke: false });
+    expect(result.errors).toContain(`no contest link: ${unlinkedKey}`);
+    expect(await getReminder(unlinkedKey)).toMatchObject({
+      href: unlinked.href,
+      start_utc: isoUtc(TARGET_START),
+      deadline_utc: isoUtc(TARGET_DEADLINE),
+      text: "",
+      status: "failed",
+      attempts: 0,
+      claim_id: null,
+      last_error: "no_contest_link",
+      created_at: isoUtc(NOW),
+      updated_at: isoUtc(NOW),
+    });
+    expect(calls.github).toHaveLength(0);
+    expect(consoleError).toHaveBeenCalledWith(`no contest link: ${unlinkedKey}`);
+  });
+
+  it("records it once, however many ticks see it due", async () => {
+    const { fetcher } = onlyContests(unlinked);
+    await runTick(env, NOW, fetcher);
+    const second = await runTick(env, NOW + MIN, fetcher);
+    expect(second.errors).not.toContain(`no contest link: ${unlinkedKey}`);
+    expect(await count()).toBe(1);
+    expect(await getReminder(unlinkedKey)).toMatchObject({ status: "failed", updated_at: isoUtc(NOW) });
+  });
+
+  it("still queues the linked contests due in the same tick", async () => {
+    const { fetcher } = onlyContests(targetInFixtures, unlinked);
+    expect((await runTick(env, NOW, fetcher)).queued).toBe(1);
+    expect(await count("status = 'queued'")).toBe(1);
+    expect(await count("status = 'failed'")).toBe(1);
+  });
+
+  it("logs a contest name replaced by the platform's fallback name", async () => {
+    const phone = { ...targetInFixtures, event: `${targetInFixtures.event} call 98765 43210` };
+    const { fetcher } = onlyContests(phone);
+    expect((await runTick(env, NOW, fetcher)).queued).toBe(1);
+    expect(consoleError).toHaveBeenCalledWith(`contest name replaced by the fallback name: ${TARGET_KEY}`);
   });
 });
 

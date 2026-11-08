@@ -143,7 +143,7 @@ describe("contract with the sender", () => {
 describe("contest names are valid free text by construction", () => {
   const ch = (cp: number) => String.fromCodePoint(cp);
   const codeforces = all.find((x) => x.resource_id === 1)!;
-  const nameOf = (event: string) => contestName({ ...codeforces, event });
+  const nameOf = (event: string) => contestName({ ...codeforces, event }).text;
 
   test("domains and IP addresses are defused until none is left", () => {
     expect(nameOf("Refact.ai Match 1 (Codeforces Round 985)")).toBe(`Refact${ch(0x2024)}ai Match 1 (Codeforces Round 985)`);
@@ -169,35 +169,78 @@ describe("contest names are valid free text by construction", () => {
     expect(nameOf(`${ch(0x200b)} ${ch(0x202e)}`)).toBe("Codeforces contest");
   });
 
+  test("says whether the name was replaced by the fallback name", () => {
+    expect(contestName({ ...codeforces, event: "Call 98765 43210 now" })).toEqual({ text: "Codeforces contest", replaced: true });
+    expect(contestName({ ...codeforces, event: "Refact.ai Match 1" }).replaced).toBe(false);
+  });
+
   test("every edge case renders a safe name", () => {
-    for (const c of EDGE_CASES) expect(isSafeText(contestName(c))).toBe(true);
+    for (const c of EDGE_CASES) expect(isSafeText(contestName(c).text)).toBe(true);
   });
 });
 
 describe("contest links", () => {
   const codeforces = all.find((x) => x.resource_id === 1)!;
 
+  const CODEFORCES = "https://codeforces.com/contests/2290";
+  const CODECHEF = "https://www.codechef.com/START264";
+  const ATCODER = "https://atcoder.jp/contests/abc476";
+  const LEETCODE = "https://leetcode.com/contest/weekly-contest-527/";
+
   test.each([
-    [1, "https://codeforces.com/contest/2290/", "https://codeforces.com/contests/2290"],
-    [1, "https://codeforces.com/contests/2290", "https://codeforces.com/contests/2290"],
-    [1, "https://codeforces.com/blog/entry/150813", undefined],
-    [2, "https://www.codechef.com/START264", "https://www.codechef.com/START264"],
-    [2, "https://www.codechef.com/START264/rankings", undefined],
-    [93, "https://atcoder.jp/contests/abc476", "https://atcoder.jp/contests/abc476"],
+    [1, "https://codeforces.com/contests/2290", CODEFORCES],
+    [1, "https://codeforces.com/contest/2290", CODEFORCES],
+    [1, "https://codeforces.com/contest/2290/", CODEFORCES],
+    [1, "http://codeforces.com/contests/2290", CODEFORCES],
+    [1, "https://www.codeforces.com/contest/2290", CODEFORCES],
+    [1, "https://codeforces.com/contest/2290?locale=en#top", CODEFORCES],
+    [2, "https://www.codechef.com/START264", CODECHEF],
+    [2, "https://codechef.com/START264", CODECHEF],
+    [2, "http://www.codechef.com/START264/", CODECHEF],
+    [2, "https://www.codechef.com/START264?itm_campaign=contest_listing#x", CODECHEF],
+    [93, "https://atcoder.jp/contests/abc476", ATCODER],
+    [93, "https://atcoder.jp/contests/abc476/", ATCODER],
+    [93, "http://www.atcoder.jp/contests/abc476?lang=en", ATCODER],
     [93, "https://atcoder.jp/contests/KeioPC2025", "https://atcoder.jp/contests/KeioPC2025"],
-    [102, "https://leetcode.com/contest/weekly-contest-527", "https://leetcode.com/contest/weekly-contest-527/"],
-    [102, "https://leetcode.com/contest/weekly-contest-527/", "https://leetcode.com/contest/weekly-contest-527/"],
+    [102, "https://leetcode.com/contest/weekly-contest-527", LEETCODE],
+    [102, "https://leetcode.com/contest/weekly-contest-527/", LEETCODE],
+    [102, "http://www.leetcode.com/contest/weekly-contest-527?tab=ranking#top", LEETCODE],
   ])("resource %i: %s → %s", (resource_id, href, want) => {
     expect(contestLink({ ...codeforces, resource_id, href })).toBe(want);
+  });
+
+  test.each([
+    [1, "https://codeforces.com/blog/entry/150813"],
+    [1, "https://codeforces.com/contest/2290/problem/A"],
+    [1, "https://m1.codeforces.com/contest/2290"],
+    [1, "https://codeforces.com.evil.test/contest/2290"],
+    [1, "https://user@codeforces.com/contest/2290"],
+    [1, "https://codeforces.com:8443/contest/2290"],
+    [1, "ftp://codeforces.com/contest/2290"],
+    [1, "codeforces.com/contest/2290"],
+    [2, "https://www.codechef.com/START264/rankings"],
+    [2, "https://www.codechef.com/"],
+    [93, "https://atcoder.jp/contests/abc476/tasks"],
+    [93, `https://atcoder.jp/contests/${"a".repeat(200)}`],
+    [102, "https://leetcode.com/contest/weekly-contest-527/ranking"],
+    [102, "https://leetcode.com/contest/Weekly-Contest-527"],
+    [7, "https://codeforces.com/contest/2290"],
+  ])("resource %i: %s has no contest link", (resource_id, href) => {
+    expect(contestLink({ ...codeforces, resource_id, href })).toBeUndefined();
   });
 
   test("every fixture contest that is selected has a link", () => {
     expect(selectContests(all, rules).filter((c) => contestLink(c) === undefined)).toEqual([]);
   });
 
-  test("a contest without a link of its platform's shape is not selected", () => {
+  test("selection does not depend on the contest link", () => {
     const blog = { ...codeforces, event: "Codeforces Round 999 (Div. 2)", href: "https://codeforces.com/blog/entry/150813" };
-    expect(selectContests([blog], rules)).toEqual([]);
+    expect(selectContests([blog], rules)).toEqual([blog]);
+  });
+
+  test("a contest without a contest link cannot be rendered", () => {
+    const blog = { ...codeforces, href: "https://codeforces.com/blog/entry/150813" };
+    expect(() => formatReminder(blog)).toThrow(/no Codeforces contest link/);
   });
 });
 

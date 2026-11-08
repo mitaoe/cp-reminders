@@ -82,6 +82,11 @@ describe("PUT /tips", () => {
     expect((await request("PUT", "/tips", body)).status).toBe(400);
     expect(await tipRow(HREF)).toBeNull();
   });
+
+  it("states the tip limit in code points", async () => {
+    const res = await request("PUT", "/tips", { href: HREF, tip: "join evil.com" });
+    expect(await res.text()).toContain(`up to ${MAX_TIP_LENGTH} code points`);
+  });
 });
 
 describe("DELETE /tips", () => {
@@ -119,6 +124,14 @@ describe("GET /preview", () => {
     stub();
     await request("PUT", "/tips", { href: HREF, tip: "bring snacks" });
     expect(await (await request("GET", "/preview")).text()).toContain("📌 Tip: bring snacks");
+  });
+
+  it("shows a contest without a contest link as a reminder that will fail", async () => {
+    const unlinked = { ...TARGET, href: `${TARGET.href.replace(/\/$/, "")}/ranking/page` };
+    const mock = mockFetch({ clist: () => new Response(JSON.stringify({ objects: [unlinked] }), { status: 200 }) });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => mock.fetcher(String(input), init));
+    const body = await (await request("GET", "/preview")).text();
+    expect(body).toMatch(/^#1  sends .+ IST\n\nNo contest link in .+ranking\/page: this reminder will be recorded as failed \(no_contest_link\)\.\n$/);
   });
 
   it("says so when nothing is scheduled", async () => {

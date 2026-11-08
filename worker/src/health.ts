@@ -15,6 +15,7 @@ export interface Health {
   claimed: number;
   failed24h: number;
   expired24h: number;
+  unlinkedContests: number;
 }
 
 interface Counts {
@@ -49,6 +50,7 @@ export async function readHealth(db: D1Database, nowMs: number): Promise<Health>
     claimed: counts?.claimed ?? 0,
     failed24h: counts?.failed24h ?? 0,
     expired24h: counts?.expired24h ?? 0,
+    unlinkedContests: Number(meta.get("unlinked_contests") ?? 0) || 0,
   };
 }
 

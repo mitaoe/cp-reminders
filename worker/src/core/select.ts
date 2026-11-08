@@ -18,7 +18,7 @@ function isPureDiv(c: Contest, div: 1 | 2): boolean {
 
 function matchesRules(c: Contest, rules: Rules): boolean {
   const platform = PLATFORM[c.resource_id];
-  if (!platform || contestLink(c) === undefined || c.duration > rules.maxDurationHours * 3600) return false;
+  if (!platform || c.duration > rules.maxDurationHours * 3600) return false;
   const matches = (patterns: string[] | undefined) => (patterns ?? []).some((p) => new RegExp(p, "i").test(c.event));
   return matches(rules.include[platform]) && !matches(rules.exclude?.[platform]);
 }
@@ -44,4 +44,10 @@ export function dueReminders(list: readonly Contest[], rules: Rules, nowMs: numb
     const start = utcMs(c.start);
     return nowMs >= start - rules.leadMinutes * 60_000 && nowMs <= start - rules.minLeadMinutes * 60_000;
   });
+}
+
+export function unlinkedContests(list: readonly Contest[], rules: Rules, nowMs: number): Contest[] {
+  return selectContests(list, rules).filter(
+    (c) => nowMs <= utcMs(c.start) - rules.minLeadMinutes * 60_000 && contestLink(c) === undefined,
+  );
 }

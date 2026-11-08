@@ -1,4 +1,6 @@
 import { type Contest, PLATFORM, isoUtc, utcMs } from "./core/format.ts";
+import { unlinkedContests } from "./core/select.ts";
+import { rules } from "./config.ts";
 import type { Fetcher } from "./env.ts";
 import { FAILURE, UpstreamError, errorMessage, failureCode, httpFailure } from "./errors.ts";
 import { deleteMeta, setMeta } from "./meta.ts";
@@ -91,6 +93,8 @@ async function saveSnapshot(
   error: string | null,
 ): Promise<void> {
   const fetchedAt = isoUtc(nowMs);
+  const unlinked = unlinkedContests(contests, rules, nowMs).length;
+  if (unlinked > 0) console.error(`${unlinked} upcoming contest(s) without a contest link`);
   await env.DB.batch([
     env.DB
       .prepare(
@@ -101,6 +105,7 @@ async function saveSnapshot(
     setMeta(env.DB, "last_fetch_at", fetchedAt),
     setMeta(env.DB, "last_fetch_source", source),
     error === null ? deleteMeta(env.DB, "last_fetch_error") : setMeta(env.DB, "last_fetch_error", error),
+    unlinked === 0 ? deleteMeta(env.DB, "unlinked_contests") : setMeta(env.DB, "unlinked_contests", String(unlinked)),
   ]);
 }
 

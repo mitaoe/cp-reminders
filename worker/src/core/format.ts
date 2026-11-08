@@ -94,24 +94,48 @@ function shorten(name: string): string {
   return points.length <= MAX_NAME_LENGTH ? name : `${points.slice(0, MAX_NAME_LENGTH - 1).join("").trimEnd()}${ELLIPSIS}`;
 }
 
-export function contestName(c: Contest): string {
-  const cleaned = displayName(c).replace(FORMAT_CHARACTERS, "").replace(NOT_GRAPHIC_OR_SPACE, " ").trim();
-  const name = shorten(defuseLinks(cleaned));
-  return isValidName(name) ? name : `${platformOf(c)} contest`;
+export interface ContestName {
+  text: string;
+  replaced: boolean;
 }
 
-const LINKS: Readonly<Record<number, { shape: RegExp; link: (id: string) => string }>> = {
-  1: { shape: /^https:\/\/codeforces\.com\/contests?\/([0-9]+)\/?$/, link: (id) => `https://codeforces.com/contests/${id}` },
-  2: { shape: /^https:\/\/www\.codechef\.com\/([A-Za-z0-9]+)$/, link: (id) => `https://www.codechef.com/${id}` },
-  93: { shape: /^https:\/\/atcoder\.jp\/contests\/([A-Za-z0-9_-]+)$/, link: (id) => `https://atcoder.jp/contests/${id}` },
-  102: { shape: /^https:\/\/leetcode\.com\/contest\/([a-z0-9-]+)\/?$/, link: (id) => `https://leetcode.com/contest/${id}/` },
+export function contestName(c: Contest): ContestName {
+  const cleaned = displayName(c).replace(FORMAT_CHARACTERS, "").replace(NOT_GRAPHIC_OR_SPACE, " ").trim();
+  const name = shorten(defuseLinks(cleaned));
+  return isValidName(name) ? { text: name, replaced: false } : { text: `${platformOf(c)} contest`, replaced: true };
+}
+
+interface ContestPage {
+  host: string;
+  path: RegExp;
+  link: (id: string) => string;
+}
+
+const CONTEST_PAGES: Readonly<Record<number, ContestPage>> = {
+  1: { host: "codeforces.com", path: /^\/contests?\/([0-9]+)\/?$/, link: (id) => `https://codeforces.com/contests/${id}` },
+  2: { host: "codechef.com", path: /^\/([A-Za-z0-9]+)\/?$/, link: (id) => `https://www.codechef.com/${id}` },
+  93: { host: "atcoder.jp", path: /^\/contests\/([A-Za-z0-9_-]+)\/?$/, link: (id) => `https://atcoder.jp/contests/${id}` },
+  102: { host: "leetcode.com", path: /^\/contest\/([a-z0-9-]+)\/?$/, link: (id) => `https://leetcode.com/contest/${id}/` },
 };
 
+function parseUrl(href: string): URL | undefined {
+  try {
+    return new URL(href);
+  } catch {
+    return undefined;
+  }
+}
+
 export function contestLink(c: Contest): string | undefined {
-  const platform = LINKS[c.resource_id];
-  const id = platform && c.href.match(platform.shape)?.[1];
+  const page = CONTEST_PAGES[c.resource_id];
+  const url = page && parseUrl(c.href);
+  if (!page || !url) return undefined;
+  if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+  if (url.username !== "" || url.password !== "" || url.port !== "") return undefined;
+  if (url.hostname !== page.host && url.hostname !== `www.${page.host}`) return undefined;
+  const id = url.pathname.match(page.path)?.[1];
   if (!id) return undefined;
-  const link = platform.link(id);
+  const link = page.link(id);
   return codePoints(link) <= MAX_LINK_LENGTH ? link : undefined;
 }
 
@@ -147,7 +171,7 @@ export function formatReminder(c: Contest, tips: readonly Tip[] = [], overrides:
     HEADER,
     "",
     `📍 Platform: ${platform}`,
-    `🏆 Contest Name: ${contestName(c)}`,
+    `🏆 Contest Name: ${contestName(c).text}`,
     `🕒 Timing: ${formatTime(h, m)}`,
     `⏳ Duration: ${formatDuration(c.duration)}`,
     `🔗 Contest Link: ${link}`,

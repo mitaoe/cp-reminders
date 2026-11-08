@@ -190,3 +190,44 @@ describe("ensureSnapshot: total failure", () => {
     expect(await getMeta(env.DB, "last_fetch_error")).toBeNull();
   });
 });
+
+describe("ensureSnapshot: contests without a contest link", () => {
+  const unlinked = (n: number, start: string) => ({
+    resource_id: 1,
+    event: `Codeforces Round ${n} (Div. 3)`,
+    start,
+    duration: 7200,
+    href: `https://codeforces.com/blog/entry/${n}`,
+  });
+  const upcomingStart = isoUtc(NOW + 3 * 60 * MIN).slice(0, 19);
+
+  it("counts the upcoming selected contests that have no contest link at each refresh", async () => {
+    const withUnlinked = mockFetch({ clist: () => jsonResponse({ objects: [...fixtureContests, unlinked(1, upcomingStart), unlinked(2, upcomingStart)] }) });
+    await ensureSnapshot(env, NOW, withUnlinked.fetcher);
+    expect(await getMeta(env.DB, "unlinked_contests")).toBe("2");
+    expect(consoleError).toHaveBeenCalledWith("2 upcoming contest(s) without a contest link");
+
+    const { fetcher } = mockFetch();
+    await ensureSnapshot(env, NOW + SNAPSHOT_TTL_MS, fetcher);
+    expect(await getMeta(env.DB, "unlinked_contests")).toBeNull();
+  });
+
+  it("ignores contests that are not selected or have already started", async () => {
+    const skipped = { ...unlinked(3, upcomingStart), event: "Kotlin Heroes: Episode 3" };
+    const started = unlinked(4, isoUtc(NOW - MIN).slice(0, 19));
+    const { fetcher } = mockFetch({ clist: () => jsonResponse({ objects: [...fixtureContests, skipped, started] }) });
+    await ensureSnapshot(env, NOW, fetcher);
+    expect(await getMeta(env.DB, "unlinked_contests")).toBeNull();
+  });
+
+  it("counts them in a snapshot completed by the Codeforces fallback", async () => {
+    const { fetcher: first } = mockFetch({ clist: () => jsonResponse({ objects: [...fixtureContests, unlinked(5, upcomingStart)] }) });
+    await ensureSnapshot(env, NOW, first);
+    const { fetcher } = mockFetch({
+      clist: () => new Response("x", { status: 500 }),
+      codeforces: () => cfResponse(Math.floor((NOW + 60 * MIN) / 1000)),
+    });
+    await ensureSnapshot(env, NOW + SNAPSHOT_TTL_MS, fetcher);
+    expect(await getMeta(env.DB, "unlinked_contests")).toBeNull();
+  });
+});

@@ -98,6 +98,26 @@ describe("GET /badge", () => {
     await expectBadge("degraded: clist", BADGE_COLOR.degraded);
   });
 
+  it("is degraded when an upcoming selected contest has no contest link", async () => {
+    await tickedMinutesAgo(RECENT_MINUTES);
+    await meta("unlinked_contests", "1");
+    await expectBadge("degraded: contest link", BADGE_COLOR.degraded);
+  });
+
+  it("reports a missing contest link before a failing clist", async () => {
+    await tickedMinutesAgo(RECENT_MINUTES);
+    await meta("unlinked_contests", "1");
+    await meta("last_fetch_error", "clist HTTP 500");
+    await expectBadge("degraded: contest link", BADGE_COLOR.degraded);
+  });
+
+  it("reports failing before a missing contest link", async () => {
+    await tickedMinutesAgo(RECENT_MINUTES);
+    await meta("unlinked_contests", "1");
+    await seedReminder({ key: "f", status: "failed", last_error: "no_contest_link" });
+    await expectBadge("1 missed in 24h", BADGE_COLOR.failing);
+  });
+
   it("reports failing before degraded", async () => {
     await tickedMinutesAgo(RECENT_MINUTES);
     await meta("last_fetch_error", "clist HTTP 500");
