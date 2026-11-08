@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -253,11 +254,15 @@ func TestDrainReleasesTheSessionAfterTheAck(t *testing.T) {
 	}
 	sess := &releasingSession{groupOnlySession: groupOnlySession{group: drain.Group{IsAnnouncements: true, IsAdmin: true}}, worker: f}
 	d.Dial = func(context.Context) (drain.Session, error) { return sess, nil }
+	dial := reflect.ValueOf(d.Dial).Pointer()
 	if err := runDrainer(context.Background(), d, time.Minute); err != nil {
 		t.Fatalf("drain: %v", err)
 	}
 	if !sess.released || sess.acksAtRelease != 1 {
 		t.Errorf("released=%v with %d ack(s) received, want released after the ack", sess.released, sess.acksAtRelease)
+	}
+	if reflect.ValueOf(d.Dial).Pointer() != dial {
+		t.Error("runDrainer replaced the caller's Dial")
 	}
 }
 

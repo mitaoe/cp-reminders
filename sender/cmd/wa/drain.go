@@ -34,15 +34,15 @@ func runDrainer(ctx context.Context, d *drain.Drainer, timeout time.Duration) (e
 			err = errors.Join(err, r.Release())
 		}
 	}()
-	dial := d.Dial
-	d.Dial = func(ctx context.Context) (drain.Session, error) {
-		s, err := dial(ctx)
+	run := *d
+	run.Dial = func(ctx context.Context) (drain.Session, error) {
+		s, err := d.Dial(ctx)
 		if r, ok := s.(releaser); ok {
 			opened = append(opened, r)
 		}
 		return s, err
 	}
-	return d.Run(ctx)
+	return run.Run(ctx)
 }
 
 func newDrainer(args []string, getenv func(string) string, out io.Writer) (*drain.Drainer, time.Duration, error) {

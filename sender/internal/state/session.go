@@ -32,6 +32,7 @@ var (
 	ErrNotPaired = errors.New("session is not paired; run `wa pair`")
 
 	errSessionDiscarded = errors.New("session was discarded")
+	errSessionCommitted = errors.New("session was already committed")
 )
 
 type sessionStatus int
@@ -42,15 +43,14 @@ const (
 	sessionDiscarded
 )
 
-// Session is a decrypted whatsmeow store in a private temporary directory.
-// Exactly one of Commit or Discard must be called to remove the plaintext.
 type Session struct {
-	Container *sqlstore.Container
-	db        *sql.DB
-	dir       string
-	vault     *Vault
-	workDir   string
-	status    sessionStatus
+	Container  *sqlstore.Container
+	db         *sql.DB
+	dir        string
+	vault      *Vault
+	workDir    string
+	status     sessionStatus
+	saveFailed bool
 }
 
 // SessionExists reports whether dir holds an encrypted session.
@@ -59,7 +59,6 @@ func SessionExists(dir string) bool {
 	return err == nil
 }
 
-// CreateSession starts an empty session that Commit will write into dir.
 func CreateSession(ctx context.Context, dir string, v *Vault, log waLog.Logger) (*Session, error) {
 	return openWork(ctx, dir, v, log, nil)
 }
@@ -117,12 +116,19 @@ func (s *Session) PairedDevice(ctx context.Context) (*store.Device, error) {
 	return dev, nil
 }
 
-// Save encrypts a consistent snapshot of the store into the state directory.
-// The store stays open, so work still running against it does not fail.
 func (s *Session) Save() error {
-	if s.status != sessionOpen {
+	switch s.status {
+	case sessionCommitted:
+		return errSessionCommitted
+	case sessionDiscarded:
 		return errSessionDiscarded
 	}
+	err := s.snapshotAndSeal()
+	s.saveFailed = err != nil
+	return err
+}
+
+func (s *Session) snapshotAndSeal() error {
 	snapshot := filepath.Join(s.workDir, snapshotName)
 	if err := os.Remove(snapshot); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("save session: %w", err)
@@ -137,8 +143,6 @@ func (s *Session) Save() error {
 	return nil
 }
 
-// Commit saves the store into the state directory, closes it and removes the plaintext.
-// Calling it again after success is a no-op.
 func (s *Session) Commit() error {
 	switch s.status {
 	case sessionCommitted:
@@ -156,8 +160,17 @@ func (s *Session) Commit() error {
 	return nil
 }
 
-// Discard closes the store and removes the plaintext without saving; the state
-// directory keeps what Save last wrote. It is a no-op after Commit or Discard.
+func (s *Session) Release() error {
+	if s.status != sessionOpen {
+		return nil
+	}
+	var saveErr error
+	if s.saveFailed {
+		saveErr = s.Save()
+	}
+	return errors.Join(saveErr, s.Discard())
+}
+
 func (s *Session) Discard() error {
 	if s.status != sessionOpen {
 		return nil
