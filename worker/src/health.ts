@@ -7,7 +7,7 @@ const DAY_MS = 24 * 3600_000;
 
 export const COUNTS_KEY = "reminder_counts";
 
-export const REMINDER_COUNTS_SQL =
+const REMINDER_COUNTS_SQL =
   "SELECT " +
   "(SELECT COUNT(*) FROM reminders WHERE status = 'queued') AS queued, " +
   "(SELECT COUNT(*) FROM reminders WHERE status = 'claimed') AS claimed, " +

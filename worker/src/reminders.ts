@@ -12,26 +12,43 @@ export const MAX_ATTEMPTS = 3;
 export const MAX_CLAIM = 5;
 
 const ELIGIBLE =
-  "status IN ('queued', 'claimed') AND deadline_utc >= ?1 AND attempts < ?3 AND (status = 'queued' OR claimed_at <= ?2)";
-
-export const PENDING_SQL = `SELECT 1 AS pending FROM reminders WHERE ${ELIGIBLE} LIMIT 1`;
-
-export const SWEEP_SQL = [
-  "UPDATE reminders SET status = 'expired', updated_at = ?1 WHERE status = 'queued' AND deadline_utc < ?1",
-  "UPDATE reminders SET status = 'expired', updated_at = ?1 WHERE status = 'claimed' AND claimed_at <= ?2 AND deadline_utc < ?1",
-  "UPDATE reminders SET status = 'failed', last_error = 'lease expired after max attempts', updated_at = ?1 " +
-    "WHERE status = 'claimed' AND claimed_at <= ?2 AND attempts >= ?3",
-] as const;
+  "deadline_utc >= ?1 AND attempts < ?3 AND (status = 'queued' OR (status = 'claimed' AND claimed_at <= ?2))";
 
 export function sweepStatements(db: D1Database, nowMs: number): D1PreparedStatement[] {
   const now = isoUtc(nowMs);
   const leaseCut = isoUtc(nowMs - LEASE_MS);
   return [
-    db.prepare(SWEEP_SQL[0]).bind(now),
-    db.prepare(SWEEP_SQL[1]).bind(now, leaseCut),
-    db.prepare(SWEEP_SQL[2]).bind(now, leaseCut, MAX_ATTEMPTS),
+    db
+      .prepare("UPDATE reminders SET status = 'expired', updated_at = ?1 WHERE status = 'queued' AND deadline_utc < ?1")
+      .bind(now),
+    db
+      .prepare(
+        "UPDATE reminders SET status = 'expired', updated_at = ?1 " +
+          "WHERE status = 'claimed' AND claimed_at <= ?2 AND deadline_utc < ?1",
+      )
+      .bind(now, leaseCut),
+    db
+      .prepare(
+        "UPDATE reminders SET status = 'failed', last_error = 'lease expired after max attempts', updated_at = ?1 " +
+          "WHERE status = 'claimed' AND claimed_at <= ?2 AND attempts >= ?3",
+      )
+      .bind(now, leaseCut, MAX_ATTEMPTS),
   ];
 }
+
+export const pendingStatement = (db: D1Database, nowMs: number): D1PreparedStatement =>
+  db
+    .prepare(`SELECT 1 AS pending FROM reminders WHERE ${ELIGIBLE} LIMIT 1`)
+    .bind(isoUtc(nowMs), isoUtc(nowMs - LEASE_MS), MAX_ATTEMPTS);
+
+export const claimStatement = (db: D1Database, claimId: string, nowMs: number): D1PreparedStatement =>
+  db
+    .prepare(
+      "UPDATE reminders SET status = 'claimed', claim_id = ?4, claimed_at = ?1, attempts = attempts + 1, updated_at = ?1 " +
+        `WHERE key IN (SELECT key FROM reminders WHERE ${ELIGIBLE} ORDER BY start_utc, key LIMIT ?5) ` +
+        "RETURNING key, text, start_utc, deadline_utc",
+    )
+    .bind(isoUtc(nowMs), isoUtc(nowMs - LEASE_MS), MAX_ATTEMPTS, claimId, MAX_CLAIM);
 
 interface ClaimedRow {
   key: string;
@@ -41,15 +58,7 @@ interface ClaimedRow {
 }
 
 export async function claimReminders(env: Env, claimId: string, nowMs: number): Promise<ClaimedItem[]> {
-  const now = isoUtc(nowMs);
-  const claim = env.DB
-    .prepare(
-      "UPDATE reminders SET status = 'claimed', claim_id = ?4, claimed_at = ?1, attempts = attempts + 1, updated_at = ?1 " +
-        `WHERE key IN (SELECT key FROM reminders WHERE ${ELIGIBLE} ORDER BY start_utc, key LIMIT ?5) ` +
-        "RETURNING key, text, start_utc, deadline_utc",
-    )
-    .bind(now, isoUtc(nowMs - LEASE_MS), MAX_ATTEMPTS, claimId, MAX_CLAIM);
-  const results = await env.DB.batch<ClaimedRow>([...sweepStatements(env.DB, nowMs), claim]);
+  const results = await env.DB.batch<ClaimedRow>([...sweepStatements(env.DB, nowMs), claimStatement(env.DB, claimId, nowMs)]);
   const rows = results[results.length - 1]?.results ?? [];
   return rows
     .sort((a, b) => a.start_utc.localeCompare(b.start_utc) || a.key.localeCompare(b.key))
@@ -70,7 +79,7 @@ const MAX_MESSAGE_ID_LENGTH = 200;
 
 const errorText = (r: AckResult): string => (r.error ?? "unknown error").slice(0, MAX_ERROR_LENGTH);
 
-function ackStatement(db: D1Database, claimId: string, r: AckResult, now: string): D1PreparedStatement {
+export function ackStatement(db: D1Database, claimId: string, r: AckResult, now: string, maxAttempts: number): D1PreparedStatement {
   switch (r.status) {
     case "sent":
       return db
@@ -89,7 +98,7 @@ function ackStatement(db: D1Database, claimId: string, r: AckResult, now: string
             "last_error = ?3, updated_at = ?4 " +
             "WHERE key = ?1 AND claim_id = ?2 AND status = 'claimed'",
         )
-        .bind(r.key, claimId, errorText(r), now, MAX_ATTEMPTS);
+        .bind(r.key, claimId, errorText(r), now, maxAttempts);
     case "rejected":
       return db
         .prepare(
@@ -103,14 +112,10 @@ function ackStatement(db: D1Database, claimId: string, r: AckResult, now: string
 export async function ackReminders(env: Env, claimId: string, results: AckResult[], nowMs: number): Promise<number> {
   if (results.length === 0) return 0;
   const now = isoUtc(nowMs);
-  const outcomes = await env.DB.batch(results.map((r) => ackStatement(env.DB, claimId, r, now)));
+  const outcomes = await env.DB.batch(results.map((r) => ackStatement(env.DB, claimId, r, now, MAX_ATTEMPTS)));
   return outcomes.reduce((sum, o) => sum + o.meta.changes, 0);
 }
 
 export async function hasPendingReminders(env: Env, nowMs: number): Promise<boolean> {
-  const row = await env.DB
-    .prepare(PENDING_SQL)
-    .bind(isoUtc(nowMs), isoUtc(nowMs - LEASE_MS), MAX_ATTEMPTS)
-    .first();
-  return row !== null;
+  return (await pendingStatement(env.DB, nowMs).first()) !== null;
 }

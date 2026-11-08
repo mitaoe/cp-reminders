@@ -99,11 +99,11 @@ Schema: the migrations in [`worker/migrations/`](../worker/migrations/), applied
 | `contest_snapshot` | Cache of upcoming contests | One row, replaced as a whole on each refresh. `payload` is the normalised `Contest[]` JSON. |
 | `reminders` | Outbox and audit log | One row per reminder, created when it becomes due and kept indefinitely (about 1,000 rows a year). The source of truth for "already handled". |
 | `tip_overrides` | One-off tips | Set at runtime without a redeploy; they take precedence over the overrides in `worker/config/tips.json`. A stored tip that is not valid free text is ignored when tips are loaded, and the Worker logs it. |
-| `meta` | Operational facts | The outcome of each tick step: `last_tick_at`; `last_fetch_at`, `last_fetch_source`, `last_fetch_error`, `unlinked_contests`; `last_wake_at`, `last_wake_error`. An error key is set when its step fails and removed when the step next succeeds. It holds only a code (see [Error codes](#error-codes)), never upstream text. `unlinked_contests` is the number of selected contests in the latest snapshot whose deadline is still ahead and that have no contest link; it is set at each refresh and removed when the number is 0. `reminder_counts` holds the reminder counts that `/health` and the badge show, as JSON `{queued, claimed, failed24h, expired24h}`; each tick writes it in the same transaction as `last_tick_at`. |
+| `meta` | Operational facts | The outcome of each tick step: `last_tick_at`; `last_fetch_at`, `last_fetch_source`, `last_fetch_error`, `unlinked_contests`; `last_wake_at`, `last_wake_error`. An error key is set when its step fails and removed when the step next succeeds. It holds only a code (see [Error codes](#error-codes)), never upstream text. `unlinked_contests` is the number of selected contests in the latest snapshot whose deadline is still ahead and that have no contest link; it is set at each refresh and removed when the number is 0. `reminder_counts` holds the reminder counts that `/health` and the badge show, as JSON `{queued, claimed, failed24h, expired24h}`; each tick writes it in the same transaction as `last_tick_at`, and the migration that introduced it stored the counts of the reminders already in the table. A missing or malformed stored value reads as zeros. |
 
 A reminder's `deadline_utc` is its start minus `minLeadMinutes` (10). After the deadline it is not worth sending.
 
-`reminders` grows by every reminder ever queued, so no query that runs on every tick or for a public request scans it. Two indexes serve them: `reminders_by_status (status, deadline_utc)` for the pending check, the claim and the sweep, and `reminders_by_status_updated (status, updated_at)` for the counts of failed and expired reminders in the last 24 hours. Each such query reads only the rows it counts or changes, and `worker/test/query-plans.test.ts` checks the query plans.
+`reminders` grows by every reminder ever queued, so no statement that runs on every tick, every send run or every public request reads the whole table. The status indexes serve them: `reminders_by_status (status, deadline_utc)` the pending check, the claim and the sweeps, and `reminders_by_status_updated (status, updated_at)` the counts of failed and expired reminders in the last 24 hours; an acknowledgement updates one row by its key. `worker/test/rows-read.test.ts` runs each of these statements, and the read of `meta` behind `/health` and `/badge`, against a table holding a few hundred old reminders and requires each to read fewer than 20 rows.
 
 ### Reminder lifecycle
 
@@ -315,9 +315,9 @@ sequenceDiagram
 
 | Miss | Badge and `/health` | Email from GitHub | Text to post by hand |
 |---|---|---|---|
-| A send run fails while sending (send error, logged out, daily limit) | Red once the row ends `failed` or `expired` | Yes, about the failed run | In the job summary |
+| A send run fails while sending (send error, logged out, daily limit) | Red at the next tick after the row ends `failed` or `expired` | Yes, about the failed run | In the job summary |
 | The sender refuses a text | Red at the next tick | Yes, about the failed run | Not shown: the text must not be posted |
-| A send run fails to claim (`SENDER_TOKEN` differs, wrong `WORKER_URL`, the Worker answers with an error such as 1027 or 500) | Red once the rows expire | Yes, about the failed run | Not in the summary, since nothing was claimed |
+| A send run fails to claim (`SENDER_TOKEN` differs, wrong `WORKER_URL`, the Worker answers with an error such as 1027 or 500) | Red at the next tick after the rows expire | Yes, about the failed run | Not in the summary, since nothing was claimed |
 | A send run fails after acknowledging (the session cannot be released) or is stopped by its job timeout | As for the outcome of its rows | Yes, about the failed run | No job summary is written |
 | A reminder expires before any send run claims it (the sender is never woken, for example while dispatch fails) | Red (`dispatch failing` while dispatch fails, then `N missed in 24h`) for 24 hours | No | No; the Worker logs nothing for it |
 | A due contest has no contest link | Red; yellow beforehand while it is ahead | No | No; the Worker logs `no contest link: <key>` |
@@ -333,7 +333,7 @@ The badge's counts are those of the last tick, at most 5 minutes old. The badge 
 | Worker requests | 288 cron ticks, plus sender and badge requests | 100,000 |
 | Worker CPU per tick | Parsing about 30 contests and rendering a few messages; fetches and SQL are I/O, not CPU | 10 ms |
 | D1 rows written | about 24 snapshot refreshes, a few reminder transitions, 288 tick timestamps and stored counts | 100,000 |
-| D1 rows read | Each tick reads the `meta` table (about ten rows) and, through indexes, only the reminders it counts or changes: a few thousand a day, independent of how many reminders the table keeps. Each `/health` or `/badge` request reads the `meta` table only. | 5,000,000 |
+| D1 rows read | Each tick reads the one `contest_snapshot` row, `last_wake_at` by its key, `tip_overrides` when a reminder is due, and through the status indexes only the reminders it counts or changes, plus the rows its upserts touch: a few thousand a day, independent of how many reminders the table keeps. Each `/health` or `/badge` request reads the `meta` table only, about ten rows. | 5,000,000 |
 | clist requests | at most 24 | 10 a minute |
 | GitHub Actions | 1–4 send runs of under a minute each, plus a deploy per release | Unlimited minutes on standard runners for public repositories |
 
