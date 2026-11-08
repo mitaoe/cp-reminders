@@ -1,6 +1,6 @@
 import { isoUtc } from "./core/format.ts";
 import type { Fetcher } from "./env.ts";
-import { errorMessage } from "./errors.ts";
+import { UpstreamError, errorMessage, failureCode, httpFailure } from "./errors.ts";
 import { deleteMeta, getMeta, setMeta } from "./meta.ts";
 import { hasPendingReminders } from "./reminders.ts";
 
@@ -25,7 +25,12 @@ async function dispatch(env: Env, fetcher: Fetcher): Promise<void> {
     body: JSON.stringify({ ref: "main" }),
     signal: AbortSignal.timeout(DISPATCH_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`workflow dispatch HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) {
+    throw new UpstreamError(
+      httpFailure(res.status),
+      `workflow dispatch HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`,
+    );
+  }
 }
 
 async function shouldWake(env: Env, nowMs: number): Promise<boolean> {
@@ -40,7 +45,8 @@ export async function maybeWake(env: Env, nowMs: number, fetcher: Fetcher): Prom
     await dispatch(env, fetcher);
   } catch (e) {
     const error = errorMessage(e);
-    await setMeta(env.DB, "last_wake_error", error).run();
+    console.error(`workflow dispatch failed: ${error}`);
+    await setMeta(env.DB, "last_wake_error", failureCode(e)).run();
     return { woke: false, error };
   }
   await env.DB.batch([setMeta(env.DB, "last_wake_at", isoUtc(nowMs)), deleteMeta(env.DB, "last_wake_error")]);

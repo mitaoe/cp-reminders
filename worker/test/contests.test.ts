@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import { SNAPSHOT_TTL_MS, ensureSnapshot } from "../src/contests.ts";
 import { isoUtc } from "../src/core/format.ts";
+import { FAILURE, httpFailure } from "../src/errors.ts";
 import { getMeta } from "../src/meta.ts";
 import { MIN, NOW, fixtureContests, jsonResponse, mockFetch, resetDb } from "./helpers.ts";
 
@@ -82,7 +83,8 @@ describe("ensureSnapshot: Codeforces fallback", () => {
     expect(result.contests.some((c) => c.resource_id === 2)).toBe(true);
     expect((await snapshotRow())?.source).toBe("codeforces");
     expect(await getMeta(env.DB, "last_fetch_source")).toBe("codeforces");
-    expect(await getMeta(env.DB, "last_fetch_error")).toMatch(/clist HTTP 500/);
+    expect(await getMeta(env.DB, "last_fetch_error")).toBe(`clist: ${httpFailure(500)}`);
+    expect(result.error).toContain("clist HTTP 500");
   });
 
   it("falls back when clist returns an empty list", async () => {
@@ -91,7 +93,30 @@ describe("ensureSnapshot: Codeforces fallback", () => {
     const result = await ensureSnapshot(env, NOW, fetcher);
     expect(calls.codeforces).toHaveLength(1);
     expect(result.contests.map((c) => c.href)).toEqual(["https://codeforces.com/contests/9001"]);
-    expect(await getMeta(env.DB, "last_fetch_error")).toMatch(/no contests/);
+    expect(await getMeta(env.DB, "last_fetch_error")).toBe(`clist: ${FAILURE.empty}`);
+  });
+
+  it.each([
+    ["an unparsable body", () => new Response("<html>", { status: 200 }), FAILURE.invalid],
+    [
+      "a timeout",
+      () => {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      },
+      FAILURE.timeout,
+    ],
+    [
+      "a failed connection",
+      () => {
+        throw new TypeError("fetch failed");
+      },
+      FAILURE.network,
+    ],
+  ])("records only a code when clist fails with %s", async (_name, clist, code) => {
+    const start = Math.floor((NOW + 60 * MIN) / 1000);
+    const { fetcher } = mockFetch({ clist, codeforces: () => cfResponse(start) });
+    await ensureSnapshot(env, NOW, fetcher);
+    expect(await getMeta(env.DB, "last_fetch_error")).toBe(`clist: ${code}`);
   });
 });
 
@@ -107,9 +132,17 @@ describe("ensureSnapshot: total failure", () => {
     expect(result.fetched).toBe(false);
     expect(result.contests).toHaveLength(fixtureContests.length);
     expect(await snapshotRow()).toEqual(before);
-    const error = await getMeta(env.DB, "last_fetch_error");
-    expect(error).toMatch(/clist HTTP 502/);
-    expect(error).toMatch(/codeforces/);
+    expect(await getMeta(env.DB, "last_fetch_error")).toBe(`clist: ${httpFailure(502)}; codeforces: ${httpFailure(503)}`);
+    expect(result.error).toMatch(/clist HTTP 502.*codeforces HTTP 503/);
+  });
+
+  it("records invalid response when Codeforces reports a failure", async () => {
+    const { fetcher } = mockFetch({
+      clist: () => new Response("x", { status: 500 }),
+      codeforces: () => jsonResponse({ status: "FAILED", comment: "internal details" }),
+    });
+    await ensureSnapshot(env, NOW, fetcher);
+    expect(await getMeta(env.DB, "last_fetch_error")).toBe(`clist: ${httpFailure(500)}; codeforces: ${FAILURE.invalid}`);
   });
 
   it("returns no contests when nothing was ever fetched", async () => {

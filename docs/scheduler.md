@@ -50,6 +50,8 @@ curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: applica
 
 The second `PUT` suppresses the tip for that contest; the `DELETE` removes the one-off tip.
 
+`/health` reports a failed fetch or dispatch only as a code ([error codes](architecture.md#error-codes)). The full error is in the `POST /tick` response and in the Worker's log: Workers Logs in the Cloudflare dashboard, or live with `pnpm exec wrangler tail` in `worker/`.
+
 ## D1 behaviour the code depends on
 
 | Behaviour | Used for | Verified by |

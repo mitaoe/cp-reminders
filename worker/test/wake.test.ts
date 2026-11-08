@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import { isoUtc } from "../src/core/format.ts";
+import { FAILURE, httpFailure } from "../src/errors.ts";
 import { getMeta } from "../src/meta.ts";
 import { LEASE_MS, MAX_ATTEMPTS } from "../src/reminders.ts";
 import { WAKE_DEBOUNCE_MS, maybeWake } from "../src/wake.ts";
@@ -49,19 +50,27 @@ describe("maybeWake", () => {
     const { fetcher } = mockFetch({ github: () => new Response("nope", { status }) });
     const result = await maybeWake(env, NOW, fetcher);
     expect(result.woke).toBe(false);
-    expect(result.error).toContain(String(status));
+    expect(result.error).toContain(`HTTP ${status}: nope`);
     expect(await getMeta(env.DB, "last_wake_at")).toBeNull();
-    expect(await getMeta(env.DB, "last_wake_error")).toBe(result.error);
+    expect(await getMeta(env.DB, "last_wake_error")).toBe(httpFailure(status));
   });
 
   it("does not record last_wake_at when the request itself throws", async () => {
     await seedReminder({ key: "a" });
     const result = await maybeWake(env, NOW, async () => {
-      throw new Error("network down");
+      throw new TypeError("fetch failed");
     });
-    expect(result).toEqual({ woke: false, error: "network down" });
+    expect(result).toEqual({ woke: false, error: "fetch failed" });
     expect(await getMeta(env.DB, "last_wake_at")).toBeNull();
-    expect(await getMeta(env.DB, "last_wake_error")).toBe("network down");
+    expect(await getMeta(env.DB, "last_wake_error")).toBe(FAILURE.network);
+  });
+
+  it("records timeout when the dispatch times out", async () => {
+    await seedReminder({ key: "a" });
+    await maybeWake(env, NOW, async () => {
+      throw new DOMException("The operation timed out.", "TimeoutError");
+    });
+    expect(await getMeta(env.DB, "last_wake_error")).toBe(FAILURE.timeout);
   });
 
   it("keeps the dispatch error until a dispatch succeeds", async () => {
@@ -71,7 +80,7 @@ describe("maybeWake", () => {
 
     await env.DB.prepare("DELETE FROM reminders").run();
     expect(await maybeWake(env, NOW + MIN, mockFetch().fetcher)).toEqual({ woke: false });
-    expect(await getMeta(env.DB, "last_wake_error")).toContain("401");
+    expect(await getMeta(env.DB, "last_wake_error")).toBe(httpFailure(401));
 
     await seedReminder({ key: "b" });
     expect(await maybeWake(env, NOW + 2 * MIN, mockFetch().fetcher)).toEqual({ woke: true });

@@ -1,6 +1,7 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isoUtc } from "../src/core/format.ts";
+import { httpFailure } from "../src/errors.ts";
 import { MIN, NOW, mockFetch, resetDb, seedReminder } from "./helpers.ts";
 
 beforeEach(async () => {
@@ -52,7 +53,7 @@ describe("GET /health", () => {
     expect(await (await health()).json()).toMatchObject({
       lastTickAt: isoUtc(NOW),
       lastFetchAt: null,
-      lastFetchError: expect.stringContaining("clist HTTP 500"),
+      lastFetchError: `clist: ${httpFailure(500)}; codeforces: ${httpFailure(503)}`,
     });
   });
 
@@ -61,7 +62,9 @@ describe("GET /health", () => {
     const mock = mockFetch({ github: () => new Response("Bad credentials", { status: 401 }) });
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => mock.fetcher(String(input), init));
     await exports.default.fetch("https://w.test/tick", { method: "POST", headers: { Authorization: `Bearer ${env.TICK_TOKEN}` } });
-    expect(await (await health()).json()).toMatchObject({ lastWakeError: expect.stringContaining("401") });
+    const raw = await (await health()).text();
+    expect(JSON.parse(raw)).toMatchObject({ lastWakeError: httpFailure(401) });
+    expect(raw).not.toContain("Bad credentials");
   });
 
   it("exposes only the documented counters, never message text, links or secrets", async () => {

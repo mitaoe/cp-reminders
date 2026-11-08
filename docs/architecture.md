@@ -95,7 +95,7 @@ Schema: [`worker/migrations/0001_init.sql`](../worker/migrations/0001_init.sql).
 | `contest_snapshot` | Cache of upcoming contests | One row, replaced as a whole on each refresh. `payload` is the normalised `Contest[]` JSON. |
 | `reminders` | Outbox and audit log | One row per reminder, created when it becomes due and kept indefinitely (about 1,000 rows a year). The source of truth for "already handled". |
 | `tip_overrides` | One-off tips | Set at runtime without a redeploy; they take precedence over the overrides in `worker/config/tips.json`. |
-| `meta` | Operational facts | The outcome of each tick step: `last_tick_at`; `last_fetch_at`, `last_fetch_source`, `last_fetch_error`; `last_wake_at`, `last_wake_error`. An error key is set when its step fails and removed when the step next succeeds. |
+| `meta` | Operational facts | The outcome of each tick step: `last_tick_at`; `last_fetch_at`, `last_fetch_source`, `last_fetch_error`; `last_wake_at`, `last_wake_error`. An error key is set when its step fails and removed when the step next succeeds. It holds only a code (see [Error codes](#error-codes)), never upstream text. |
 
 A reminder's `deadline_utc` is its start minus `minLeadMinutes` (10). After the deadline it is not worth sending.
 
@@ -174,7 +174,7 @@ Bodies are JSON. Authentication is `Authorization: Bearer <token>`.
 
 | Route | Auth | Behaviour |
 |---|---|---|
-| `GET /health` | none | `{lastTickAt, lastFetchAt, lastFetchSource, lastFetchError, lastWakeError, queued, claimed, failed24h, expired24h}`. Contains no secrets and no message text. |
+| `GET /health` | none | `{lastTickAt, lastFetchAt, lastFetchSource, lastFetchError, lastWakeError, queued, claimed, failed24h, expired24h}`. The two errors are codes ([Error codes](#error-codes)). Contains no secrets, no message text and no upstream response text. |
 | `GET /badge` | none | The health as a [shields.io endpoint badge](https://shields.io/badges/endpoint-badge) (see [Status badge](#status-badge)). |
 | `POST /tick` | `TICK_TOKEN` | Runs one tick and returns `{fetched, queued, woke, errors}`. |
 | `GET /preview` | `ADMIN_TOKEN` | The next 10 reminders with their send time in IST and rendered text. |
@@ -195,7 +195,21 @@ Bodies are JSON. Authentication is `Authorization: Bearer <token>`.
 | degraded | `lastFetchError` is set | `degraded: clist` | `yellow` |
 | healthy | otherwise | `ok · tick 3m ago` | `brightgreen` |
 
-A tick that cannot start the sender turns the badge red at once, before any reminder is missed. It stays red until a dispatch succeeds, so a fault that outlasts its reminders stays visible. A single transient GitHub error clears on the next tick, which retries the dispatch. The badge carries no error text; `/health` has it.
+A tick that cannot start the sender turns the badge red at once, before any reminder is missed. It stays red until a dispatch succeeds, so a fault that outlasts its reminders stays visible. A single transient GitHub error clears on the next tick, which retries the dispatch. The badge carries no error; `/health` has its code.
+
+### Error codes
+
+`last_fetch_error`, `last_wake_error` and the matching `/health` fields hold a code from a fixed set, so upstream response text, such as GitHub's reason for refusing a token, never becomes public:
+
+| Code | Cause |
+|---|---|
+| `HTTP <status>` | The upstream service answered with a status outside 2xx. |
+| `timeout` | The request did not finish within 8 seconds. |
+| `network error` | The request failed before an answer, or with any other error. |
+| `invalid response` | The body was not valid JSON, or Codeforces reported a failure. |
+| `no contests` | clist or Codeforces returned no upcoming contests. |
+
+`last_fetch_error` names each source that failed, such as `clist: HTTP 502` or `clist: timeout; codeforces: HTTP 503`; `last_wake_error` is the code alone. The full error, including up to 200 characters of the response body for a failed dispatch, is written to the Worker's log, which Workers Logs keeps (`observability` in `wrangler.jsonc`) and `wrangler tail` streams, and is returned by `POST /tick`, which requires `TICK_TOKEN`.
 
 The README shows it through `https://img.shields.io/endpoint?url=<WORKER_URL>/badge&logo=cloudflare&logoColor=white` [9].
 
@@ -252,7 +266,7 @@ sequenceDiagram
 |---|---|---|
 | clist down or rate-limited | No fresh contest data | Codeforces fallback; contests already in the snapshot are still reminded. Shown by `/health` and a yellow badge. |
 | Cron tick late or skipped | Reminder delayed | A reminder stays sendable from 45 to 10 minutes before the start, so ticks can be up to 35 minutes late. The badge turns red after 15 minutes without a tick. |
-| Dispatch fails (GitHub error, revoked or wrong `GH_TOKEN`) | Sender not woken; no run starts, so GitHub sends no email | `last_wake_error` turns the badge red at once and `/health` shows GitHub's error. `last_wake_at` stays unchanged, so every tick dispatches again until one succeeds. |
+| Dispatch fails (GitHub error, revoked or wrong `GH_TOKEN`) | Sender not woken; no run starts, so GitHub sends no email | `last_wake_error` turns the badge red at once and `/health` shows its code, such as `HTTP 401`; the Worker's log and `POST /tick` show GitHub's full answer. `last_wake_at` stays unchanged, so every tick dispatches again until one succeeds. |
 | Pending run cancelled by a newer one | None | The outbox keeps the rows; the next run drains them. |
 | Two runs at once | Prevented | Concurrency group `wa-session`. One live connection is also what WhatsApp expects of a device. |
 | Sent, but the ack is lost | Risk of a duplicate | The next run finds the key in `sent.json` and acks it as sent without resending. If the deadline passes first, the row ends `expired` although the message was delivered; `sent.json` is the record of delivery. |
