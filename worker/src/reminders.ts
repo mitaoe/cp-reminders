@@ -86,7 +86,7 @@ export function ackStatement(db: D1Database, claimId: string, r: AckResult, nowM
       return db
         .prepare(
           "UPDATE reminders SET status = 'sent', message_id = ?3, sent_at = ?4, updated_at = ?4, last_error = NULL " +
-            "WHERE key = ?1 AND claim_id = ?2 AND status IN ('claimed', 'expired')",
+            "WHERE key = ?1 AND claim_id = ?2 AND status IN ('claimed', 'expired', 'failed')",
         )
         .bind(r.key, claimId, (r.messageId ?? "").slice(0, MAX_MESSAGE_ID_LENGTH) || null, now);
     case "failed":

@@ -30,10 +30,18 @@ export const IST_OFFSET_MS = 330 * 60_000;
 
 export const isoUtc = (ms: number): string => new Date(ms).toISOString();
 
-export function utcMs(s: string): number {
-  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : `${s}Z`;
+export function parseUtcMs(s: unknown): number | null {
+  if (typeof s !== "string") return null;
+  const trimmed = s.trim();
+  if (!trimmed) return null;
+  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(trimmed) ? trimmed : `${trimmed}Z`;
   const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) throw new Error(`bad start time: ${s}`);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+export function utcMs(s: string): number {
+  const ms = parseUtcMs(s);
+  if (ms === null) throw new Error(`bad start time: ${s}`);
   return ms;
 }
 

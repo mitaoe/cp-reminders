@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { type Contest, utcMs } from "../../src/core/format.ts";
-import { type Rules, dueReminders, missedReminders, reminderWindow, unlinkedContests } from "../../src/core/select.ts";
+import { type Rules, dueReminders, missedReminders, reminderWindow, selectContests, unlinkedContests } from "../../src/core/select.ts";
 
 const MIN = 60_000;
 
@@ -76,5 +76,22 @@ describe("unlinkedContests", () => {
   test("counts selected contests without a contest link until their window closes", () => {
     expect(unlinkedContests([unlinked, contest], RULES, closes)).toEqual([unlinked]);
     expect(unlinkedContests([unlinked], RULES, closes + 1000)).toHaveLength(0);
+  });
+});
+
+describe("invalid start timestamps", () => {
+  const invalid = { ...contest, start: "TBD" };
+
+  test("selectContests ignores contests with unparseable start timestamps", () => {
+    expect(selectContests([invalid, contest], RULES)).toEqual([contest]);
+    expect(selectContests([{ ...contest, start: "" }], RULES)).toEqual([]);
+    expect(selectContests([{ ...contest, start: "invalid" }], RULES)).toEqual([]);
+    expect(selectContests([null as unknown as Contest, contest], RULES)).toEqual([contest]);
+  });
+
+  test("dueReminders, missedReminders, and unlinkedContests do not throw on invalid start times", () => {
+    expect(dueReminders([invalid], RULES, opens)).toEqual([]);
+    expect(missedReminders([invalid], RULES, closes + 1000, opens - 1000)).toEqual([]);
+    expect(unlinkedContests([invalid], RULES, closes)).toEqual([]);
   });
 });

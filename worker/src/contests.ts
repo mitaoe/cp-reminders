@@ -1,4 +1,4 @@
-import { type Contest, PLATFORM, isoUtc, utcMs } from "./core/format.ts";
+import { type Contest, PLATFORM, isoUtc, parseUtcMs } from "./core/format.ts";
 import { unlinkedContests } from "./core/select.ts";
 import { rules } from "./config.ts";
 import type { Fetcher } from "./env.ts";
@@ -47,13 +47,15 @@ async function fetchClist(env: Env, nowMs: number, fetcher: Fetcher): Promise<Co
   if (!res.ok) throw new UpstreamError(httpFailure(res.status), `clist HTTP ${res.status}`);
   const body = (await res.json()) as { objects?: unknown } | null;
   if (!Array.isArray(body?.objects)) throw new UpstreamError(FAILURE.invalid, "clist returned no contest list");
-  const contests = (body.objects as Contest[]).map(({ resource_id, event, start, duration, href }) => ({
-    resource_id,
-    event,
-    start,
-    duration,
-    href,
-  }));
+  const contests = (body.objects as Contest[])
+    .filter((c) => parseUtcMs(c?.start) !== null)
+    .map(({ resource_id, event, start, duration, href }) => ({
+      resource_id,
+      event,
+      start,
+      duration,
+      href,
+    }));
   if (contests.length === 0) throw new UpstreamError(FAILURE.empty, "clist returned no contests");
   return contests;
 }
@@ -124,7 +126,11 @@ export async function ensureSnapshot(env: Env, nowMs: number, fetcher: Fetcher):
 
   const codeforces = await attempt("codeforces", () => fetchCodeforces(nowMs, fetcher));
   if ("contests" in codeforces) {
-    const others = previous.filter((c) => c.resource_id !== 1 && inLookback(utcMs(c.start), nowMs));
+    const others = previous.filter((c) => {
+      if (!c || c.resource_id === 1) return false;
+      const startMs = parseUtcMs(c.start);
+      return startMs !== null && inLookback(startMs, nowMs);
+    });
     const contests = [...codeforces.contests, ...others].sort(byStart);
     await saveSnapshot(env, nowMs, "codeforces", contests, clist.failure.code);
     return { contests, fetched: true, error: clist.failure.detail };

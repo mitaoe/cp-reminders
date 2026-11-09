@@ -122,6 +122,67 @@ describe("ackReminders", () => {
     expect((await getReminder("a"))?.status).toBe("expired");
   });
 
+  it("still records a sent ack for a reminder that failed after max attempts while the message was in flight", async () => {
+    await seedReminder({
+      key: "a",
+      status: "failed",
+      attempts: MAX_ATTEMPTS,
+      claim_id: "c1",
+      claimed_at: isoUtc(NOW - 20 * MIN),
+      last_error: "lease expired after max attempts",
+    });
+    const applied = await ackReminders(env, "c1", [{ key: "a", status: "sent", messageId: "m1" }], NOW);
+    expect(applied).toBe(1);
+    expect(await getReminder("a")).toMatchObject({
+      status: "sent",
+      message_id: "m1",
+      sent_at: isoUtc(NOW),
+      updated_at: isoUtc(NOW),
+      last_error: null,
+    });
+  });
+
+  it("does not resurrect a failed reminder from a failed or rejected ack", async () => {
+    await seedReminder({
+      key: "a",
+      status: "failed",
+      attempts: MAX_ATTEMPTS,
+      claim_id: "c1",
+      last_error: "lease expired after max attempts",
+    });
+    const appliedFailed = await ackReminders(env, "c1", [{ key: "a", status: "failed", error: "x" }], NOW);
+    expect(appliedFailed).toBe(0);
+    const appliedRejected = await ackReminders(env, "c1", [{ key: "a", status: "rejected", error: "x" }], NOW);
+    expect(appliedRejected).toBe(0);
+    expect(await getReminder("a")).toMatchObject({ status: "failed", last_error: "lease expired after max attempts" });
+  });
+
+  it("ignores a sent ack for a failed reminder if claimId does not match", async () => {
+    await seedReminder({
+      key: "a",
+      status: "failed",
+      attempts: MAX_ATTEMPTS,
+      claim_id: "owner",
+      last_error: "lease expired after max attempts",
+    });
+    const applied = await ackReminders(env, "intruder", [{ key: "a", status: "sent", messageId: "m1" }], NOW);
+    expect(applied).toBe(0);
+    expect(await getReminder("a")).toMatchObject({ status: "failed", claim_id: "owner" });
+  });
+
+  it("ignores a sent ack for a failed reminder that has no claimId (e.g. no contest link)", async () => {
+    await seedReminder({
+      key: "a",
+      status: "failed",
+      attempts: 0,
+      claim_id: null,
+      last_error: "no contest link: a",
+    });
+    const applied = await ackReminders(env, "c1", [{ key: "a", status: "sent", messageId: "m1" }], NOW);
+    expect(applied).toBe(0);
+    expect(await getReminder("a")).toMatchObject({ status: "failed", claim_id: null, last_error: "no contest link: a" });
+  });
+
   it("truncates oversized error text", async () => {
     await claimed("a");
     await ackReminders(env, "c1", [{ key: "a", status: "failed", error: "x".repeat(MAX_ERROR_LENGTH + 100) }], NOW);

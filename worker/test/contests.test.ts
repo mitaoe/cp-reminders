@@ -65,6 +65,47 @@ describe("ensureSnapshot: clist", () => {
     await ensureSnapshot(env, NOW + SNAPSHOT_TTL_MS, fetcher);
     expect(calls.clist).toHaveLength(2);
   });
+
+  it("filters contests with invalid or missing timestamps from clist", async () => {
+    const invalidContests = [
+      { resource_id: 1, event: "Codeforces Round 9999 (Div. 2)", start: "TBD", duration: 7200, href: "https://codeforces.com/contests/9999" },
+      { resource_id: 2, event: "Starters 999", start: "invalid-date", duration: 7200, href: "https://www.codechef.com/START999" },
+      { resource_id: 102, event: "Weekly Contest 999", start: "", duration: 5400, href: "https://leetcode.com/contest/weekly-contest-999" },
+    ];
+    const { fetcher } = mockFetch({
+      clist: () => jsonResponse({ objects: [...fixtureContests, ...invalidContests] }),
+    });
+    const result = await ensureSnapshot(env, NOW, fetcher);
+    expect(result.fetched).toBe(true);
+    expect(result.contests).toHaveLength(fixtureContests.length);
+    expect(result.contests.some((c) => c.start === "TBD")).toBe(false);
+  });
+
+  it("filters null and missing start fields in objects array without throwing", async () => {
+    const corruptedObjects = [
+      null,
+      undefined,
+      { resource_id: 1, event: "Missing start", duration: 7200, href: "https://codeforces.com/missing" },
+    ];
+    const { fetcher } = mockFetch({
+      clist: () => jsonResponse({ objects: [...fixtureContests, ...corruptedObjects] }),
+    });
+    const result = await ensureSnapshot(env, NOW, fetcher);
+    expect(result.fetched).toBe(true);
+    expect(result.contests).toHaveLength(fixtureContests.length);
+  });
+
+  it("falls back to Codeforces when clist returns only contests with invalid timestamps", async () => {
+    const start = Math.floor((NOW + 60 * MIN) / 1000);
+    const { fetcher, calls } = mockFetch({
+      clist: () => jsonResponse({ objects: [{ resource_id: 1, event: "Round TBD", start: "TBD", duration: 7200, href: "https://codeforces.com/contests/1" }] }),
+      codeforces: () => cfResponse(start),
+    });
+    const result = await ensureSnapshot(env, NOW, fetcher);
+    expect(calls.codeforces).toHaveLength(1);
+    expect(result.contests.map((c) => c.href)).toEqual(["https://codeforces.com/contests/9001"]);
+    expect(await getMeta(env.DB, "last_fetch_error")).toBe(`clist: ${FAILURE.empty}`);
+  });
 });
 
 describe("ensureSnapshot: Codeforces fallback", () => {
@@ -122,6 +163,25 @@ describe("ensureSnapshot: Codeforces fallback", () => {
     expect(hrefs).not.toContain("https://codeforces.com/contests/9002");
     expect(hrefs).toContain("https://www.codechef.com/RECENT1");
     expect(hrefs).not.toContain("https://www.codechef.com/OLD1");
+  });
+
+  it("safely ignores previous snapshot contests with invalid start timestamps during Codeforces fallback", async () => {
+    const recentStart = NOW - SNAPSHOT_LOOKBACK_MS + 60 * MIN;
+    const validOther = { ...fixtureContests.find((c) => c.resource_id === 2)!, start: isoUtc(recentStart).slice(0, 19), href: "https://www.codechef.com/RECENT1" };
+    const invalidOther = { ...validOther, start: "TBD", href: "https://www.codechef.com/TBD" };
+    await env.DB.prepare(
+      "INSERT INTO contest_snapshot (id, source, fetched_at, payload) VALUES (1, 'clist', ?1, ?2)",
+    ).bind(isoUtc(NOW - 2 * SNAPSHOT_TTL_MS), JSON.stringify([validOther, invalidOther, null])).run();
+
+    const start = Math.floor((NOW + 60 * MIN) / 1000);
+    const { fetcher } = mockFetch({
+      clist: () => new Response("x", { status: 500 }),
+      codeforces: () => cfResponse(start),
+    });
+    const result = await ensureSnapshot(env, NOW, fetcher);
+    expect(result.fetched).toBe(true);
+    expect(result.contests.some((c) => c.href === "https://www.codechef.com/RECENT1")).toBe(true);
+    expect(result.contests.some((c) => c.href === "https://www.codechef.com/TBD")).toBe(false);
   });
 
   it("falls back when clist returns an empty list", async () => {

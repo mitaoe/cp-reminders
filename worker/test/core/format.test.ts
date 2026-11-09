@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { baseOverrides, rules, tipRules } from "../../src/config.ts";
-import { type Contest, type Tip, contestLink, contestName, formatDuration, formatReminder, formatTime } from "../../src/core/format.ts";
+import { type Contest, type Tip, contestLink, contestName, formatDuration, formatReminder, formatTime, parseUtcMs, utcMs } from "../../src/core/format.ts";
 import { type Rules, reminderKey, selectContests } from "../../src/core/select.ts";
 import { MAX_NAME_LENGTH, isSafeText, isValidTip } from "../../src/core/text.ts";
 import contractTexts from "../../../testdata/reminders.json" with { type: "json" };
@@ -369,5 +369,33 @@ describe("tips", () => {
     expect(formatReminder(morning, tips, { [morning.href]: "custom" })).toMatch(/Tip: custom$/);
     expect(formatReminder(evening, tips, { [evening.href]: "custom" })).toMatch(/Tip: custom$/);
     expect(formatReminder(morning, tips, { [morning.href]: "" })).not.toMatch(/Tip/);
+  });
+});
+
+describe("parseUtcMs and utcMs", () => {
+  test("parses ISO strings with or without Z or timezone offset", () => {
+    expect(parseUtcMs("2026-11-09T06:00:00Z")).toBe(Date.parse("2026-11-09T06:00:00Z"));
+    expect(parseUtcMs("2026-11-09T06:00:00")).toBe(Date.parse("2026-11-09T06:00:00Z"));
+    expect(parseUtcMs("2026-11-09 06:00:00")).toBe(Date.parse("2026-11-09T06:00:00Z"));
+    expect(parseUtcMs("2026-11-09T11:30:00+05:30")).toBe(Date.parse("2026-11-09T06:00:00Z"));
+  });
+
+  test("returns null for invalid or unparseable timestamps", () => {
+    expect(parseUtcMs("TBD")).toBeNull();
+    expect(parseUtcMs("invalid-date")).toBeNull();
+    expect(parseUtcMs("")).toBeNull();
+    expect(parseUtcMs("   ")).toBeNull();
+  });
+
+  test("returns null for non-string inputs", () => {
+    expect(parseUtcMs(null)).toBeNull();
+    expect(parseUtcMs(undefined)).toBeNull();
+    expect(parseUtcMs(12345)).toBeNull();
+    expect(parseUtcMs({})).toBeNull();
+  });
+
+  test("utcMs returns milliseconds for valid timestamps and throws for invalid", () => {
+    expect(utcMs("2026-11-09T06:00:00Z")).toBe(Date.parse("2026-11-09T06:00:00Z"));
+    expect(() => utcMs("TBD")).toThrow("bad start time: TBD");
   });
 });
