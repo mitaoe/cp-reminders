@@ -31,7 +31,7 @@ Posts a reminder for every Codeforces, CodeChef, LeetCode and AtCoder contest in
 | `worker/config/` | Which contests get reminders, lead times and tips. |
 | `sender/` | Go WhatsApp sender. |
 | `testdata/` | Test data shared by the Worker and the sender: the rendered reminders and free-text examples ([reminder-format.md](docs/reminder-format.md#shared-test-data)). |
-| `.github/workflows/` | `send.yml` drains the outbox; `deploy.yml` deploys the Worker; `ci.yml` runs the checks. |
+| `.github/workflows/` | `send.yml` drains the outbox; `deploy.yml` deploys the Worker; `ci.yml` runs the checks; `stale.yml` marks and closes inactive issues and pull requests. |
 | `.github/dependabot.yml` | Weekly version updates for the Worker's direct dependencies, the sender's tagged direct Go modules and the pinned actions ([workflow.md](docs/workflow.md#dependabot)). |
 | `docs/` | Design and operation. |
 | `docs/pfp/` | The sender's WhatsApp profile picture: `crewmates.svg` is the source, `crewmates.png` the 640×640 image set on the account. |
@@ -52,7 +52,7 @@ Branch `state` of the deployment repository holds the sender's WhatsApp login, e
 - [Formatter](docs/formatter.md): how contests become reminders, contest selection and tips.
 - [Scheduler](docs/scheduler.md): the Worker, its API, deployment and development.
 - [Sender](docs/sender.md): commands, content checks, pairing and troubleshooting.
-- [Workflows](docs/workflow.md): `send.yml`, `deploy.yml`, `ci.yml` and Dependabot.
+- [Workflows](docs/workflow.md): `send.yml`, `deploy.yml`, `ci.yml`, `stale.yml` and Dependabot.
 - [Research](docs/research/report.md): the findings behind the design.
 
 ## Operating

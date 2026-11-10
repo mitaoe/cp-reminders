@@ -1,6 +1,6 @@
 # GitHub Actions workflows
 
-`.github/workflows/` holds three workflows. Every action is pinned to a full commit SHA, with its release in a trailing comment.
+`.github/workflows/` holds four workflows. Every action is pinned to a full commit SHA, with its release in a trailing comment.
 
 ## Where they run
 
@@ -11,10 +11,11 @@ The same files exist in `mitaoe/cp-reminders` and in its fork, the deployment re
 | `ci.yml` | CI | `worker`: Worker Type Check and Tests; `sender`: Sender Vet and Tests | Every repository | Always |
 | `send.yml` | Send Reminders | `drain`: Drain Outbox; `persist`: Persist State | The deployment repository only | The repository variable `BOT_DEPLOYMENT` is `true` |
 | `deploy.yml` | Deploy Worker | `check`: Type Check and Tests; `deploy`: Deploy to Cloudflare | The deployment repository only | The repository variable `BOT_DEPLOYMENT` is `true` |
+| `stale.yml` | Close Stale Issues and PRs | `stale`: Mark and Close Stale | Every repository except the deployment repository | The repository variable `BOT_DEPLOYMENT` is not `true` |
 
 The Worker dispatches `send.yml` and the README's CI badge points at `ci.yml`, both by file name; renaming a workflow changes only the badge's label.
 
-Every job of the two bot workflows checks the variable, so in any other repository, including `mitaoe/cp-reminders` and forks made by contributors, those jobs are skipped rather than failing for want of secrets. Which repository runs the bot is therefore a repository setting, not a name in the code. Workflows in a new fork run only after Actions is enabled in its Actions tab ([forks](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository)).
+Every job of the two bot workflows checks the variable, so in any other repository, including `mitaoe/cp-reminders` and forks made by contributors, those jobs are skipped rather than failing for want of secrets. Which repository runs the bot is therefore a repository setting, not a name in the code. `stale.yml` checks the same variable the other way round, so it manages the issues and pull requests of `mitaoe/cp-reminders` and does not run in the deployment repository, which has no issues and receives its changes by Sync fork. Workflows in a new fork run only after Actions is enabled in its Actions tab ([forks](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository)).
 
 ## send.yml: drain the outbox
 
@@ -80,6 +81,12 @@ Runs on every push and pull request, with `contents: read` and a concurrency gro
 | `sender` | `go vet ./...` and `go test ./...` in `sender/`. |
 
 The root `package.json` contains only `name`, `private` and `packageManager`: `pnpm/setup` takes the pnpm version from it and runs `pnpm install` when a `package.json` is present. `packageManager` must have the form `pnpm@x.y.z`, with no hash suffix, and `devEngines.packageManager` must not be set: the `deploy` job of `deploy.yml` accepts nothing else, and it finds that version's hashes in the first document of `pnpm-lock.yaml`.
+
+## stale.yml: stale issues and pull requests
+
+Runs every Monday and Thursday at 00:00 UTC and by hand (`workflow_dispatch`), through [`actions/stale`](https://github.com/actions/stale). The workflow has no permissions; its job has `issues: write` and `pull-requests: write`.
+
+Issues and pull requests with no activity for 7 days are labelled `stale` and closed 30 days later; a comment removes the label at the next run. Items labelled `pinned`, `security`, `help wanted` or `good first issue` are never marked or closed, and neither are pull requests labelled `dependencies`, which Dependabot adds to its own. If one of these labels is added to an item that is already `stale`, the `stale` label stays until it is removed by hand. Closing a Dependabot pull request would make Dependabot skip that release. A run makes at most 100 API operations.
 
 ## Dependabot
 

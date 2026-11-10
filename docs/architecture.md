@@ -74,7 +74,7 @@ flowchart LR
 | Core (`worker/src/core/`) | Pure functions: select contests, decide which reminders are due, render the text, check free text. | Performs I/O. |
 | Worker (`worker/`) | Fetches and caches contests, queues due reminders, wakes the sender, serves the outbox, reports health and a status badge. | Talks to WhatsApp or knows the target chat. |
 | Sender (`sender/`) | Claims queued reminders, checks that each is a reminder in the agreed format, posts it to the one allowed chat, reports results, saves the WhatsApp session. | Decides what to send or when, accepts a destination over the network, or posts a text that is not a reminder. |
-| Workflows (`.github/workflows/`) | In the deployment repository: `send.yml` runs the sender with its secrets, one run at a time, and saves its state; `deploy.yml` deploys the Worker. In every repository: `ci.yml` runs the checks. | Carry message text: the dispatch is only a wake-up. |
+| Workflows (`.github/workflows/`) | In the deployment repository: `send.yml` runs the sender with its secrets, one run at a time, and saves its state; `deploy.yml` deploys the Worker. In every repository: `ci.yml` runs the checks. Everywhere except the deployment repository: `stale.yml` marks and closes inactive issues and pull requests. | Carry message text: the dispatch is only a wake-up. |
 
 ## Design decisions
 
@@ -360,7 +360,7 @@ worker/              Cloudflare Worker (pnpm workspace package)
   test/fixtures/     frozen clist data and the community's manual reminders, August 2025 to November 2026
 sender/              Go module: cmd/wa, internal/{drain,outbox,redact,reminder,state,wa}
 testdata/            test data shared by the Worker and the sender: reminders.json, free-text.json
-.github/workflows/   send.yml (drain the outbox), deploy.yml (deploy the Worker), ci.yml (checks)
+.github/workflows/   send.yml (drain the outbox), deploy.yml (deploy the Worker), ci.yml (checks), stale.yml (stale issues and pull requests)
 docs/                architecture, reminder format, formatter, scheduler, sender, workflow
 docs/research/       research behind the design
 ```
