@@ -22,7 +22,7 @@ jobs:
           persist-credentials: false
       - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
         with:
-          runtime: node@24
+          runtime: node@26
           cache: true
       - run: pnpm --filter cp-reminders-worker typecheck
       - run: pnpm --filter cp-reminders-worker test
