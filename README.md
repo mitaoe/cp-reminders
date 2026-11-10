@@ -53,6 +53,7 @@ Branch `state` of the deployment repository holds the sender's WhatsApp login, e
 - [Sender](docs/sender.md): commands, content checks, pairing and troubleshooting.
 - [Workflows](docs/workflow.md): `send.yml`, `deploy.yml` and `ci.yml`.
 - [Research](docs/research/report.md): the findings behind the design.
+- [Contributing](CONTRIBUTING.md): outside contributions are not accepted for now; reports of the bot misbehaving are.
 
 ## Operating
 
