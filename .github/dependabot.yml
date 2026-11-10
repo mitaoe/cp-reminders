@@ -6,7 +6,6 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
-      prefix-development: chore
       include: scope
     groups:
       npm-dependencies:
