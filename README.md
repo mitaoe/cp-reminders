@@ -32,12 +32,13 @@ Posts a reminder for every Codeforces, CodeChef, LeetCode and AtCoder contest in
 | `sender/` | Go WhatsApp sender. |
 | `testdata/` | Test data shared by the Worker and the sender: the rendered reminders and free-text examples ([reminder-format.md](docs/reminder-format.md#shared-test-data)). |
 | `.github/workflows/` | `send.yml` drains the outbox; `deploy.yml` deploys the Worker; `ci.yml` runs the checks. |
+| `.github/dependabot.yml` | Weekly version updates for the Worker's direct dependencies, the sender's tagged direct Go modules and the pinned actions ([workflow.md](docs/workflow.md#dependabot)). |
 | `docs/` | Design and operation. |
 | `docs/pfp/` | The sender's WhatsApp profile picture: `crewmates.svg` is the source, `crewmates.png` the 640×640 image set on the account. |
 
 ### Where it runs
 
-- **[mitaoe/cp-reminders](https://github.com/mitaoe/cp-reminders)** holds the code. It has no secrets, and the bot never runs from it. Its `main` changes only through pull requests whose CI checks pass; force pushes and deletion are blocked. `.github/CODEOWNERS` requests a review from @adityakotkar47 on every pull request opened by another account, except while it is a draft. GitHub never requests a review from a pull request's own author, and no approval is required, so @adityakotkar47 merges his own pull requests once CI passes.
+- **[mitaoe/cp-reminders](https://github.com/mitaoe/cp-reminders)** holds the code. It has no secrets, and the bot never runs from it. Its `main` changes only through pull requests whose CI checks pass, each squashed into one commit whose message is the pull request's title; force pushes and deletion are blocked. `.github/CODEOWNERS` requests a review from @adityakotkar47 on every pull request opened by another account, except while it is a draft. GitHub never requests a review from a pull request's own author, and no approval is required, so @adityakotkar47 merges his own pull requests once CI passes.
 - **The deployment repository**, [adityakotkar47/cp-reminders](https://github.com/adityakotkar47/cp-reminders), is a fork of it and runs the bot. It alone has the bot's secrets, the repository variable `BOT_DEPLOYMENT=true` that enables `send.yml` and `deploy.yml`, and branch `state`.
 
 A release is a **Sync fork** of the deployment repository, with the button on GitHub or `gh repo sync adityakotkar47/cp-reminders --branch main`. It brings over whatever is on `mitaoe/cp-reminders` `main` at that moment, so the [compare view](https://github.com/adityakotkar47/cp-reminders/compare/main...mitaoe:cp-reminders:main) is checked just before, with collapsed files such as `pnpm-lock.yaml` expanded; for a large difference, `git fetch origin && git fetch upstream && git diff origin/main upstream/main` in a clone with the fork as `origin` and `mitaoe/cp-reminders` as `upstream` shows the same. Every workflow on the fork can read the bot's secrets. `deploy.yml` runs when the release touches `worker/`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or `deploy.yml` itself ([workflow.md](docs/workflow.md#deployyml-deploy-the-worker)): its tests run without secrets, then pnpm, Wrangler and the locked dependencies run with the Cloudflare token, apply `worker/migrations` to the production D1 database and deploy a Worker that holds its own secrets. The next send run uses the new sender.
@@ -51,7 +52,7 @@ Branch `state` of the deployment repository holds the sender's WhatsApp login, e
 - [Formatter](docs/formatter.md): how contests become reminders, contest selection and tips.
 - [Scheduler](docs/scheduler.md): the Worker, its API, deployment and development.
 - [Sender](docs/sender.md): commands, content checks, pairing and troubleshooting.
-- [Workflows](docs/workflow.md): `send.yml`, `deploy.yml` and `ci.yml`.
+- [Workflows](docs/workflow.md): `send.yml`, `deploy.yml`, `ci.yml` and Dependabot.
 - [Research](docs/research/report.md): the findings behind the design.
 
 ## Operating

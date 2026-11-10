@@ -80,3 +80,20 @@ Runs on every push and pull request, with `contents: read` and a concurrency gro
 | `sender` | `go vet ./...` and `go test ./...` in `sender/`. |
 
 The root `package.json` contains only `name`, `private` and `packageManager`: `pnpm/setup` takes the pnpm version from it and runs `pnpm install` when a `package.json` is present. `packageManager` must have the form `pnpm@x.y.z`, with no hash suffix, and `devEngines.packageManager` must not be set: the `deploy` job of `deploy.yml` accepts nothing else, and it finds that version's hashes in the first document of `pnpm-lock.yaml`.
+
+## Dependabot
+
+`.github/dependabot.yml` checks weekly for updates to:
+
+| Ecosystem | Directory | Covers |
+|---|---|---|
+| `npm` | `/`, the root of the pnpm workspace | The direct dependencies in `worker/package.json`, with `pnpm-lock.yaml` updated to match. |
+| `gomod` | `/sender` | The tagged direct requirements of the sender's Go module, within their major version; modules marked `// indirect` change only when a direct update needs them. |
+| `github-actions` | `/` | The actions in `.github/workflows/`, updating each SHA pin and its release comment. |
+
+Minor and patch updates are grouped into one pull request per ecosystem, and every GitHub Actions update into one; a major npm update gets its own pull request. Titles take the form `chore(deps): …`, or `chore(deps-dev): …` for development dependencies; the title becomes the message of the squashed commit on `main`. Dependabot's pull requests run `ci.yml` like any other, and reach the deployment repository only through a release.
+
+What it does not cover:
+
+- **Alerts and security updates for the Worker.** `pnpm-lock.yaml` consists of two YAML documents, the format pnpm 12 writes when the pnpm version is pinned, and GitHub's dependency graph does not read such a lockfile ([dependency graph](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/dependency-graph-supported-package-ecosystems)). GitHub therefore creates no Dependabot alerts or security updates for the Worker's npm dependencies, and version updates cover the direct dependencies only.
+- **Untagged, indirect and new major Go modules.** Version updates do not change a module required at a pseudo-version, such as `go.mau.fi/whatsmeow`, which has no tagged releases; do not update a module marked `// indirect` on its own, only as far as a direct update needs; and do not move a module to a new major version, which is a new module path ([major version suffixes](https://go.dev/ref/mod#major-version-suffixes)). These are updated by hand, with `go get` in `sender/` followed by `go mod tidy`.
