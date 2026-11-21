@@ -37,8 +37,10 @@ interface CodeforcesResponse {
 
 const CODECHEF_HOST_WITHOUT_SLASH = /^(https?:\/\/(?:www\.)?codechef\.com)(?=[A-Z0-9]+(?:[/?#]|$))/;
 
-const repairHref = (resourceId: number, href: string): string =>
-  resourceId === 2 && typeof href === "string" ? href.replace(CODECHEF_HOST_WITHOUT_SLASH, "$1/") : href;
+const repairLink = (c: Contest): Contest =>
+  c.resource_id === 2 && typeof c.href === "string"
+    ? { ...c, href: c.href.replace(CODECHEF_HOST_WITHOUT_SLASH, "$1/") }
+    : c;
 
 async function fetchClist(env: Env, nowMs: number, fetcher: Fetcher): Promise<Contest[]> {
   const ids = Object.keys(PLATFORM).join(",");
@@ -52,13 +54,9 @@ async function fetchClist(env: Env, nowMs: number, fetcher: Fetcher): Promise<Co
   if (!res.ok) throw new UpstreamError(httpFailure(res.status), `clist HTTP ${res.status}`);
   const body = (await res.json()) as { objects?: unknown } | null;
   if (!Array.isArray(body?.objects)) throw new UpstreamError(FAILURE.invalid, "clist returned no contest list");
-  const contests = (body.objects as Contest[]).map(({ resource_id, event, start, duration, href }) => ({
-    resource_id,
-    event,
-    start,
-    duration,
-    href: repairHref(resource_id, href),
-  }));
+  const contests = (body.objects as Contest[]).map(({ resource_id, event, start, duration, href }) =>
+    repairLink({ resource_id, event, start, duration, href }),
+  );
   if (contests.length === 0) throw new UpstreamError(FAILURE.empty, "clist returned no contests");
   return contests;
 }
@@ -118,7 +116,7 @@ async function saveSnapshot(
 
 export async function ensureSnapshot(env: Env, nowMs: number, fetcher: Fetcher): Promise<SnapshotResult> {
   const row = await env.DB.prepare("SELECT fetched_at, payload FROM contest_snapshot WHERE id = 1").first<SnapshotRow>();
-  const previous: Contest[] = row ? (JSON.parse(row.payload) as Contest[]) : [];
+  const previous: Contest[] = row ? (JSON.parse(row.payload) as Contest[]).map(repairLink) : [];
   if (row && nowMs - Date.parse(row.fetched_at) < SNAPSHOT_TTL_MS) return { contests: previous, fetched: false };
 
   const clist = await attempt("clist", () => fetchClist(env, nowMs, fetcher));
