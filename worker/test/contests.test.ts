@@ -218,6 +218,61 @@ describe("ensureSnapshot: total failure", () => {
   });
 });
 
+describe("ensureSnapshot: CodeChef links without the slash after the host", () => {
+  const starters = (href: unknown, resource_id = 2) => ({
+    resource_id,
+    event: "Starters 266",
+    start: isoUtc(NOW + 3 * 60 * MIN).slice(0, 19),
+    duration: 7200,
+    href,
+  });
+  const storedHrefs = async () => (JSON.parse((await snapshotRow())!.payload) as { href: unknown }[]).map((c) => c.href);
+
+  it.each([
+    ["https://www.codechef.comSTART266", "https://www.codechef.com/START266"],
+    ["https://codechef.comSTART266", "https://codechef.com/START266"],
+    ["http://www.codechef.comSTART266", "http://www.codechef.com/START266"],
+    ["https://www.codechef.comSTART266/", "https://www.codechef.com/START266/"],
+    ["https://www.codechef.comSTART266?tab=problems#top", "https://www.codechef.com/START266?tab=problems#top"],
+    ["https://www.codechef.comSTART266A", "https://www.codechef.com/START266A"],
+  ])("stores %s as %s and counts it as linked", async (broken, repaired) => {
+    const { fetcher } = mockFetch({ clist: () => jsonResponse({ objects: [...fixtureContests, starters(broken)] }) });
+    const result = await ensureSnapshot(env, NOW, fetcher);
+    expect(result.contests.at(-1)?.href).toBe(repaired);
+    expect((await storedHrefs()).at(-1)).toBe(repaired);
+    expect(await getMeta(env.DB, "unlinked_contests")).toBeNull();
+  });
+
+  it.each([
+    ["a CodeChef link with the slash", "https://www.codechef.com/START266"],
+    ["a longer host that starts with the CodeChef host", "https://www.codechef.community/"],
+    ["a host under the CodeChef host", "https://www.codechef.com.evil.test/START266"],
+    ["a lowercase continuation of the host", "https://www.codechef.comstart266"],
+    ["a code followed by more of a host", "https://www.codechef.comSTART266.evil.test/"],
+    ["a code followed by a port", "https://www.codechef.comSTART266:8443/"],
+    ["another scheme", "ftp://www.codechef.comSTART266"],
+  ])("keeps %s as clist gives it", async (_name, href) => {
+    const { fetcher } = mockFetch({ clist: () => jsonResponse({ objects: [...fixtureContests, starters(href)] }) });
+    await ensureSnapshot(env, NOW, fetcher);
+    expect((await storedHrefs()).at(-1)).toBe(href);
+  });
+
+  it("keeps the links of other platforms as clist gives them", async () => {
+    const other = starters("https://www.codechef.comSTART266", 1);
+    const { fetcher } = mockFetch({ clist: () => jsonResponse({ objects: [...fixtureContests, other] }) });
+    await ensureSnapshot(env, NOW, fetcher);
+    expect(await storedHrefs()).toEqual([...fixtureContests, other].map((c) => c.href));
+  });
+
+  it("keeps a CodeChef contest whose href is not a string", async () => {
+    const { fetcher } = mockFetch({ clist: () => jsonResponse({ objects: [...fixtureContests, starters(null)] }) });
+    const result = await ensureSnapshot(env, NOW, fetcher);
+    expect(result).toMatchObject({ fetched: true });
+    expect((await snapshotRow())?.source).toBe("clist");
+    expect((await storedHrefs()).at(-1)).toBeNull();
+  });
+});
+
 describe("ensureSnapshot: contests without a contest link", () => {
   const unlinked = (n: number, start: string) => ({
     resource_id: 1,

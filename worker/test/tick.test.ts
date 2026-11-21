@@ -117,6 +117,22 @@ describe("runTick: queueing", () => {
     expect(await getReminder(reminderKey(rescheduled))).toMatchObject({ start_utc: isoUtc(movedStart), status: "queued" });
   });
 
+  it("queues one reminder under one key for a CodeChef link that clist corrects while it is queued", async () => {
+    const starters = { ...fixtureContests.find((c) => c.resource_id === 2)!, event: "Starters 266", start: TARGET.start };
+    const broken = onlyContests({ ...starters, href: "https://www.codechef.comSTART266" });
+    const corrected = onlyContests({ ...starters, href: "https://www.codechef.com/START266" });
+    const key = "2|https://www.codechef.com/START266";
+
+    expect((await runTick(env, NOW + 5 * MIN - SNAPSHOT_TTL_MS, broken.fetcher)).queued).toBe(0);
+    expect(await runTick(env, NOW, broken.fetcher)).toMatchObject({ fetched: false, queued: 1 });
+    expect(await runTick(env, NOW + 5 * MIN, corrected.fetcher)).toMatchObject({ fetched: true, queued: 0 });
+
+    expect(await count()).toBe(1);
+    const row = await getReminder(key);
+    expect(row).toMatchObject({ href: "https://www.codechef.com/START266", status: "queued" });
+    expect(row?.text).toContain("🔗 Contest Link: https://www.codechef.com/START266");
+  });
+
   it("keeps queueing from the previous snapshot when every source fails", async () => {
     const { fetcher: ok } = mockFetch();
     await runTick(env, NOW - 2 * SNAPSHOT_TTL_MS, ok);
