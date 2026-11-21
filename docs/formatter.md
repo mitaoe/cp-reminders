@@ -56,7 +56,11 @@ Every name the formatter renders therefore passes the sender's check.
 
 ## Contest links
 
-`contestLink` reads clist's link leniently and writes the platform's contest page in the one shape [reminder-format.md](reminder-format.md#fields) defines. It accepts `http` or `https`, the host with or without `www.`, and a trailing `/`, and drops any query and fragment; it refuses another host or subdomain, a user name or a port. From the path it takes the contest's id:
+A contest's link is clist's `href` as the contest snapshot stores it. The snapshot keeps clist's link unchanged, except for CodeChef links in which clist puts the contest code straight after the host, such as `https://www.codechef.comSTART266`: those are repaired when the snapshot is fetched by putting the `/` back after the host, giving `https://www.codechef.com/START266`. The repair applies only to an `http` or `https` link whose host is `codechef.com` or `www.codechef.com` and is followed by a code of capital letters and digits, the form of CodeChef's contest codes, and then `/`, `?`, `#` or the end of the link; the code and everything after it stay as they are. Lowercase letters after `codechef.com` belong to a longer host, such as `www.codechef.community`, so that link, like every other link and every other platform's, is stored as clist gives it.
+
+The repair happens at ingestion rather than in `contestLink` because the reminder key (`resource_id|href`) and one-off tips are keyed by the stored link. A link without the slash and the same link with it are stored identically, so a contest has one key whether or not clist corrects its link, and a contest whose link clist corrects while its reminder is queued is not reminded a second time.
+
+`contestLink` reads the stored link leniently and writes the platform's contest page in the one shape [reminder-format.md](reminder-format.md#fields) defines. It accepts `http` or `https`, the host with or without `www.`, and a trailing `/`, and drops any query and fragment; it refuses another host or subdomain, a user name or a port. From the path it takes the contest's id:
 
 | Platform | Path read | Contest link written |
 |---|---|---|
@@ -95,7 +99,7 @@ A reminder is therefore sendable from 45 to 10 minutes before the start. Each co
 
 - `rules` are checked in order and the first match wins. A rule can require a `platform`, a start before a given IST time (`startsBeforeIST`, such as `"12:00"` for morning contests) and a contest name matching `eventMatches`, and holds a pool of `texts`.
 - One text from the matching rule's pool is used per contest, chosen from a hash of the contest link. The same contest always gets the same tip, so the preview shows exactly what is sent, and consecutive contests usually differ.
-- `overrides` map a contest link, as clist gives it or as the reminder shows it, to a tip for that contest alone; an empty string suppresses the tip.
+- `overrides` map a contest link, as the snapshot stores it ([above](#contest-links)) or as the reminder shows it, to a tip for that contest alone; an empty string suppresses the tip.
 
 | Rule | Pool |
 |---|---|
@@ -117,7 +121,7 @@ Every tip, configured or one-off, is free text of at most 500 code points as [re
 
 - **Golden tests** use the real `rules.json` on purpose: they fail when a configuration change would break the community's format or skip a contest the community posts. For every manual reminder of the four platforms, the bot's platform, contest name, timing, duration and link for the same contest must equal the manual post; the tip line is not compared, because the manual tips were written per post. Every manually posted contest must be selected. The exceptions are listed in the test with a reason each, and a test fails if a listed post stops differing: 32 manual slips (a contest that started 10 to 15 minutes after the posted time, a duration or contest number copied from another post, a wrong division label, a singular Codeforces link, a sponsor name kept, a double space or typo) and 4 posts the rules do not select (2 unrated rounds, skipped by decision, and 2 links that are not clist's).
 - **Template test.** The bot's text equals the community's latest post for the same contest byte for byte, apart from the tip line.
-- **Name and link tests.** Hostile names are defused, cleaned, shortened or replaced by the fallback name, every variant of each platform's link maps to its contest link and every other link to none, selection ignores the link, and a contest without a contest link cannot be rendered. The Worker's tests cover how such a contest is reported at refresh, at tick, in `/health`, on the badge and in `/preview`.
+- **Name and link tests.** Hostile names are defused, cleaned, shortened or replaced by the fallback name, every variant of each platform's link maps to its contest link and every other link to none, selection ignores the link, and a contest without a contest link cannot be rendered. The Worker's tests cover which CodeChef links the snapshot repairs and that a repaired contest keeps one key, and how a contest without a contest link is reported at refresh, at tick, in `/health`, on the badge and in `/preview`.
 - **Contract tests.** `testdata/reminders.json` must equal every reminder the formatter renders for the contests of the same period, with the configured tips, followed by the synthetic edge-case contests in `worker/test/contract.ts`; the sender's tests parse every text in it with the sender's own check. Every configured tip must be valid. The free-text checks of both languages are tested against `testdata/free-text.json` ([reminder-format.md](reminder-format.md#shared-test-data)).
 - **Rule tests** define their own rules and tips in the test, so they hold whatever the configuration says: include and exclude patterns, the duration limit, Div. 1 and Div. 2 merging, the due window, sponsored names, the reminder key, tip rules, tip pools and overrides.
 

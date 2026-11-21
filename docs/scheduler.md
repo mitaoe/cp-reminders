@@ -10,7 +10,7 @@ The Worker in `worker/` fetches contests, queues reminders in D1, wakes the send
 | `src/router.ts` | Path and method matching; bearer authentication per route. |
 | `src/auth.ts` | Bearer parsing and constant-time comparison of SHA-256 digests. |
 | `src/core/` | Contest selection, message formatting ([formatter.md](formatter.md)) and the free-text rules of the reminder format ([reminder-format.md](reminder-format.md)). |
-| `src/contests.ts` | Contest snapshot of the contests that start from 24 hours ago onward: clist, with the Codeforces API as fallback, and the count of upcoming contests without a contest link. |
+| `src/contests.ts` | Contest snapshot of the contests that start from 24 hours ago onward: clist, with its CodeChef links that lack the `/` after the host repaired, the Codeforces API as fallback, and the count of upcoming contests without a contest link. |
 | `src/tick.ts` | One tick: refresh the snapshot, queue due reminders or record them as `no_contest_link` failures, record windows that lay entirely between the previous successful tick and this one as `missed_window`, expire, store the counts, wake. |
 | `src/reminders.ts` | Claim, acknowledgement, lease and expiry SQL. |
 | `src/wake.ts` | `workflow_dispatch` of `send.yml`, debounced. |
