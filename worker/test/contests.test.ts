@@ -271,6 +271,44 @@ describe("ensureSnapshot: CodeChef links without the slash after the host", () =
     expect((await snapshotRow())?.source).toBe("clist");
     expect((await storedHrefs()).at(-1)).toBeNull();
   });
+
+  describe("in a snapshot read from D1", () => {
+    const broken = starters("https://www.codechef.comSTART266");
+    const storeSnapshot = (fetchedAtMs: number) =>
+      env.DB.prepare("INSERT INTO contest_snapshot (id, source, fetched_at, payload) VALUES (1, 'clist', ?1, ?2)")
+        .bind(isoUtc(fetchedAtMs), JSON.stringify([...fixtureContests, broken]))
+        .run();
+    const hrefOf = (contests: { event: string; href: unknown }[]) => contests.find((c) => c.event === "Starters 266")?.href;
+
+    it("repairs a fresh snapshot without fetching", async () => {
+      await storeSnapshot(NOW - MIN);
+      const { fetcher, calls } = mockFetch();
+      const result = await ensureSnapshot(env, NOW, fetcher);
+      expect(result.fetched).toBe(false);
+      expect(calls.clist).toHaveLength(0);
+      expect(hrefOf(result.contests)).toBe("https://www.codechef.com/START266");
+    });
+
+    it("repairs the contests kept by the Codeforces fallback, in the result and the stored snapshot", async () => {
+      await storeSnapshot(NOW - 2 * SNAPSHOT_TTL_MS);
+      const { fetcher } = mockFetch({
+        clist: () => new Response("x", { status: 500 }),
+        codeforces: () => cfResponse(Math.floor((NOW + 60 * MIN) / 1000)),
+      });
+      const result = await ensureSnapshot(env, NOW, fetcher);
+      expect(hrefOf(result.contests)).toBe("https://www.codechef.com/START266");
+      expect(hrefOf(JSON.parse((await snapshotRow())!.payload))).toBe("https://www.codechef.com/START266");
+      expect(await getMeta(env.DB, "unlinked_contests")).toBeNull();
+    });
+
+    it("repairs the previous snapshot it returns when every source fails", async () => {
+      await storeSnapshot(NOW - 2 * SNAPSHOT_TTL_MS);
+      const { fetcher } = mockFetch({ clist: () => new Response("x", { status: 500 }) });
+      const result = await ensureSnapshot(env, NOW, fetcher);
+      expect(result.fetched).toBe(false);
+      expect(hrefOf(result.contests)).toBe("https://www.codechef.com/START266");
+    });
+  });
 });
 
 describe("ensureSnapshot: contests without a contest link", () => {
