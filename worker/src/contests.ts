@@ -35,6 +35,11 @@ interface CodeforcesResponse {
   result?: CodeforcesContest[];
 }
 
+const CODECHEF_HOST_WITHOUT_SLASH = /^(https?:\/\/(?:www\.)?codechef\.com)(?=[A-Z0-9]+(?:[/?#]|$))/;
+
+const repairHref = (resourceId: number, href: string): string =>
+  resourceId === 2 && typeof href === "string" ? href.replace(CODECHEF_HOST_WITHOUT_SLASH, "$1/") : href;
+
 async function fetchClist(env: Env, nowMs: number, fetcher: Fetcher): Promise<Contest[]> {
   const ids = Object.keys(PLATFORM).join(",");
   const url =
@@ -52,7 +57,7 @@ async function fetchClist(env: Env, nowMs: number, fetcher: Fetcher): Promise<Co
     event,
     start,
     duration,
-    href,
+    href: repairHref(resource_id, href),
   }));
   if (contests.length === 0) throw new UpstreamError(FAILURE.empty, "clist returned no contests");
   return contests;
