@@ -8,7 +8,7 @@ require (
 	go.mau.fi/libsignal v0.2.3
 	go.mau.fi/whatsmeow v0.0.0-20261106223246-93ce5f1e6023
 	google.golang.org/protobuf v1.36.12
-	modernc.org/sqlite v1.62.0
+	modernc.org/sqlite v1.63.0
 )
 
 require (
